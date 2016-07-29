@@ -1,0 +1,6 @@
+[submodule "deps/bgfx"]
+	path = deps/bgfx
+	url = https://github.com/bkaradzic/bgfx
+[submodule "deps/bx"]
+	path = deps/bx
+	url = https://github.com/bkaradzic/bx
