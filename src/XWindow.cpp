@@ -115,7 +115,6 @@ public:
 		GLXFBConfig* configs =
 			glXChooseFBConfig(mDisplay, 0, pixmapConfig, &numConfigs);
 		if(numConfigs == 0) { return 0; }
-		printf("%d\n", numConfigs);
 
 		Pixmap pixmap = XCompositeNameWindowPixmap(mDisplay, wndId);
 		GLXPixmap glxpixmap =

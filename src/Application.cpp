@@ -85,7 +85,7 @@ public:
 		int width, height;
 		SDL_GetWindowSize(appCtx.mWindow, &width, &height);
 		bgfx::reset(width, height, BGFX_RESET_VSYNC);
-		bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
+		bgfx::setDebug(BGFX_DEBUG_TEXT);
 		bgfx::setViewRect(0, 0, 0, width, height);
 		bgfx::setViewClear(
 			0,
@@ -96,14 +96,15 @@ public:
 		);
 
 		float view[16];
-		bx::mtxIdentity(view);
+		float eye[] = { 0.f, 0.f, 300.f };
+		float at[] = { -300.f, 100.f, 0.f };
+		bx::mtxLookAtRh(view, eye, at);
+
 		float proj[16];
-		bx::mtxOrtho(
-			proj,
-			width * -0.5f, width * 0.5f,
-			height * -0.5f, height * 0.5f,
-			-1.0f,
-			1.0f
+		bx::mtxProjRh(proj,
+			50.0f,
+			(float)width / (float)height,
+			1.0f, 100000.f
 		);
 		bgfx::setViewTransform(0, view, proj);
 
@@ -244,8 +245,11 @@ private:
 		unsigned int width, height;
 		app->mDesktopEnvironment.getWindowSize(id, width, height);
 		float transform[16];
-		bx::mtxIdentity(transform);
-		bx::mtxScale(transform, width, height, 1.0f);
+		bx::mtxSRT(transform,
+			width, height, 1.0f,
+			0.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.f
+		);
 		bgfx::setTransform(transform);
 		bgfx::setVertexBuffer(app->mQuad);
 		bgfx::setIndexBuffer(app->mQuadIndices);
