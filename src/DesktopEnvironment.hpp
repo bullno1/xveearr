@@ -2,6 +2,7 @@
 #define XVEEARR_DESKTOP_ENVIRONMENT_HPP
 
 #include <cstdint>
+#include <bgfx/bgfx.h>
 
 #define XVEEARR_DECLARE_DE(CLASS) \
 	namespace xveearr { \
@@ -26,7 +27,7 @@ public:
 	virtual void update() = 0;
 	virtual void beginRender() = 0;
 	virtual void endRender() = 0;
-	virtual uintptr_t createTextureForWindow(WindowId wndId) = 0;
+	virtual bgfx::TextureHandle getTexture(WindowId wndId) = 0;
 	virtual void enumerateWindows(WindowEnumFn enumFn, void* context) = 0;
 	virtual void getWindowSize(
 		WindowId wndId, unsigned int& width, unsigned int& height) = 0;
