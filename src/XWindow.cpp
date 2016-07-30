@@ -235,9 +235,14 @@ private:
 
 	void bindWindowToTexture(Window window, GLuint texture)
 	{
+		XWindowAttributes winAttrs;
+		XGetWindowAttributes(mDisplay, window, &winAttrs);
+		// TODO: signal that we gave up
+		if(winAttrs.depth == 0) { return; }
+
 		const int pixmapConfig[] = {
 			GLX_BIND_TO_TEXTURE_RGBA_EXT, True,
-			GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+			GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
 			GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
 			GLX_DOUBLEBUFFER, False,
 			GLX_Y_INVERTED_EXT, (int)GLX_DONT_CARE,
@@ -246,7 +251,7 @@ private:
 
 		const int pixmapAttrs[] = {
 			GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
-			GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGB_EXT,
+			GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGBA_EXT,
 			None
 		};
 
@@ -254,10 +259,23 @@ private:
 		GLXFBConfig* configs =
 			glXChooseFBConfig(mDisplay, 0, pixmapConfig, &numConfigs);
 
+		int i;
+		for(i = 0; i < numConfigs; ++i)
+		{
+			XVisualInfo* visualInfo = glXGetVisualFromFBConfig(mDisplay, configs[i]);
+			int depth = visualInfo->depth;
+			XFree(visualInfo);
+
+			if(depth == winAttrs.depth)
+			{
+				break;
+			}
+		}
+
 		Pixmap pixmap = XCompositeNameWindowPixmap(mDisplay, window);
 
 		GLXPixmap glxPixmap =
-			glXCreatePixmap(mDisplay, configs[0],  pixmap, pixmapAttrs);
+			glXCreatePixmap(mDisplay, configs[i],  pixmap, pixmapAttrs);
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glXBindTexImageEXT(mDisplay, glxPixmap, GLX_FRONT_LEFT_EXT, NULL);
 		glFinish();
