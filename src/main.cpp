@@ -29,7 +29,7 @@ int main(int argc, const char* argv[])
 	bool running = app.init(appCtx);
 
 	double timerFreq = bx::getHPFrequency();
-	double lastTime = bx::getHPCounter();
+	double lastTime = (double)bx::getHPCounter() / timerFreq;
 	double accumulator = 0;
 	double deltaTime = 1.0 / 60.0;
 

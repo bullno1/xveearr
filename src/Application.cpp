@@ -1,5 +1,6 @@
 #include "Application.hpp"
 #include <cstdio>
+#include <unordered_map>
 #include <SDL_syswm.h>
 #include <bgfx/bgfxplatform.h>
 #include <bgfx/bgfx.h>
@@ -18,10 +19,10 @@ namespace xveearr
 namespace
 {
 
-struct TextureOverride
+struct TextureBind
 {
-	bgfx::TextureHandle mBgfxHandle;
-	uintptr_t mNativeHandle;
+	bgfx::TextureHandle mTexture;
+	WindowId mWindowId;
 };
 
 struct Vertex
@@ -56,6 +57,12 @@ static const uint16_t gIndicies[] =
 	2, 3, 0
 };
 
+struct WindowData
+{
+	uint8_t mCounter;
+	bgfx::TextureHandle mTexture;
+};
+
 }
 
 class ApplicationImpl: public Application
@@ -78,7 +85,7 @@ public:
 		int width, height;
 		SDL_GetWindowSize(appCtx.mWindow, &width, &height);
 		bgfx::reset(width, height, BGFX_RESET_VSYNC);
-		bgfx::setDebug(BGFX_DEBUG_TEXT);
+		bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 		bgfx::setViewRect(0, 0, 0, width, height);
 		bgfx::setViewClear(
 			0,
@@ -115,6 +122,11 @@ public:
 			bgfx::makeRef(quad_fsh_h, sizeof(quad_fsh_h))
 		);
 		mProgram = bgfx::createProgram(vsh, fsh, true);
+		mTextureUniform = bgfx::createUniform(
+			"u_texture", bgfx::UniformType::Int1
+		);
+
+		mCounter = 0;
 
 		return true;
 	}
@@ -132,19 +144,31 @@ public:
 
 	void render()
 	{
-		bgfx::setState(BGFX_STATE_DEFAULT);
-		float transform[16];
-		bx::mtxIdentity(transform);
-		bx::mtxScale(transform, 40.0f, 40.0f, 1.0f);
-		bgfx::setTransform(transform);
-		bgfx::setVertexBuffer(mQuad);
-		bgfx::setIndexBuffer(mQuadIndices);
-		bgfx::submit(0, mProgram);
+		++mCounter;
+
+		bgfx::touch(0);
+		mDesktopEnvironment.enumerateWindows(drawWindow, this);
+
+		for(auto itr = mWindows.begin(); itr != mWindows.end();)
+		{
+			if(itr->second.mCounter != mCounter)
+			{
+				bgfx::destroyTexture(itr->second.mTexture);
+				itr = mWindows.erase(itr);
+			}
+			else
+			{
+				++itr;
+			}
+		}
+
 		bgfx::frame();
 	}
 
 	void shutdown()
 	{
+		bgfx::destroyUniform(mTextureUniform);
+		bgfx::destroyProgram(mProgram);
 		bgfx::destroyIndexBuffer(mQuadIndices);
 		bgfx::destroyVertexBuffer(mQuad);
 		bgfx::shutdown();
@@ -171,13 +195,18 @@ private:
 
 			if(renderStatus == bgfx::RenderFrame::Render)
 			{
-				while(app->mOverrideQueue.peek())
+				while(app->mBindQueue.peek())
 				{
-					TextureOverride* txOverride = app->mOverrideQueue.pop();
-					bgfx::overrideInternal(
-						txOverride->mBgfxHandle,
-						txOverride->mNativeHandle
-					);
+					TextureBind* bind = app->mBindQueue.pop();
+					uintptr_t nativeTexture =
+						app->mDesktopEnvironment.createTextureForWindow(
+							bind->mWindowId
+						);
+					if(nativeTexture)
+					{
+						bgfx::overrideInternal(bind->mTexture, nativeTexture);
+					}
+					delete bind;
 				}
 			}
 
@@ -190,13 +219,50 @@ private:
 		return 0;
 	}
 
+	static void drawWindow(WindowId id, void* context)
+	{
+		ApplicationImpl* app = static_cast<ApplicationImpl*>(context);
+
+		auto itr = app->mWindows.find(id);
+		if(itr == app->mWindows.end())
+		{
+			WindowData data;
+			data.mCounter = app->mCounter;
+			itr = app->mWindows.insert(std::make_pair(id, data)).first;
+			itr->second.mTexture = bgfx::createTexture2D(
+				1, 1,
+				0,
+				bgfx::TextureFormat::RGBA8
+			);
+			TextureBind* bind = new TextureBind;
+			bind->mTexture = itr->second.mTexture;
+			bind->mWindowId = id;
+			app->mBindQueue.push(bind);
+		}
+		itr->second.mCounter = app->mCounter;
+
+		unsigned int width, height;
+		app->mDesktopEnvironment.getWindowSize(id, width, height);
+		float transform[16];
+		bx::mtxIdentity(transform);
+		bx::mtxScale(transform, width, height, 1.0f);
+		bgfx::setTransform(transform);
+		bgfx::setVertexBuffer(app->mQuad);
+		bgfx::setIndexBuffer(app->mQuadIndices);
+		bgfx::setTexture(0, app->mTextureUniform, itr->second.mTexture);
+		bgfx::submit(0, app->mProgram);
+	}
+
 	DesktopEnvironment& mDesktopEnvironment;
+	uint8_t mCounter;
 	bx::Thread mRenderThread;
 	bx::Semaphore mRenderThreadReadySem;
-	bx::SpScUnboundedQueue<TextureOverride> mOverrideQueue;
+	bx::SpScUnboundedQueue<TextureBind> mBindQueue;
 	bgfx::VertexBufferHandle mQuad;
 	bgfx::IndexBufferHandle mQuadIndices;
 	bgfx::ProgramHandle mProgram;
+	bgfx::UniformHandle mTextureUniform;
+	std::unordered_map<WindowId, WindowData> mWindows;
 };
 
 }

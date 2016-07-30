@@ -40,7 +40,6 @@ flags = [
 '-Wextra',
 '-Werror',
 '-pedantic',
-'-Wc++98-compat',
 '-fexceptions',
 '-DNDEBUG',
 # THIS IS IMPORTANT! Without a "-std=<something>" flag, clang won't know which
