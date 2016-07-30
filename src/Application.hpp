@@ -17,7 +17,6 @@ struct ApplicationContext
 	int mArgc;
 	const char** mArgv;
 	SDL_Window* mWindow;
-	SDL_GLContext mGLContext;
 };
 
 class Application

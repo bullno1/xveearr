@@ -10,10 +10,10 @@ int main(int argc, const char* argv[])
 	(void)argc;
 	(void)argv;
 
-	if(SDL_Init(SDL_INIT_VIDEO) != 0) { return 1; }
+	if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { return 1; }
 
 	SDL_Window* window = SDL_CreateWindow(
-		"Hello World!",
+		"Xveearr",
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		1280, 720,
 		SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL
@@ -21,14 +21,11 @@ int main(int argc, const char* argv[])
 
 	if(window == NULL) { return 1; }
 
-	SDL_GLContext glCtx = SDL_GL_CreateContext(window);
-
 	Application& app = Application::getInstance();
 	ApplicationContext appCtx;
 	appCtx.mArgc = argc;
 	appCtx.mArgv = argv;
 	appCtx.mWindow = window;
-	appCtx.mGLContext = glCtx;
 	bool running = app.init(appCtx);
 
 	double timerFreq = bx::getHPFrequency();
@@ -58,7 +55,6 @@ int main(int argc, const char* argv[])
 	}
 
 	app.shutdown();
-	SDL_GL_DeleteContext(glCtx);
 	SDL_DestroyWindow(window);
 
 	SDL_Quit();

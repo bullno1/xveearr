@@ -1,0 +1,27 @@
+#!/bin/sh -e
+
+`${NUMAKE} --enable-trace`
+
+${NUMAKE} --depend bin/shaderc
+
+mkdir -p $(dirname $3)
+
+VARYING_DEF_NAME=$(echo $(head -n1 $2) | cut -d' ' -f3-)
+VARYING_DEF_PATH=$(dirname $2)/${VARYING_DEF_NAME}
+
+CMD="bin/shaderc \
+	--type $1 \
+	-f "$2" \
+	-o "$3" \
+	--bin2c \
+	-i deps/bgfx/src \
+	--varyingdef "${VARYING_DEF_PATH}" \
+	--depends \
+	--platform linux"
+
+echo ${CMD}
+${CMD}
+
+# Add headers dependency
+headers=$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$3.d" | cut -d' ' -f3-)
+${NUMAKE} --depend ${headers}

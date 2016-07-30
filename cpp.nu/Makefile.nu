@@ -8,14 +8,22 @@ CPP_FLAGS ?= -Wall
 LINK_FLAGS ?=
 
 # A phony rule to register target as an executable
-exe:%: ${BUILD_DIR}/%.exe << BUILD_DIR ! live
+exe:%: << BUILD_DIR stable ! live
+	exe="${BUILD_DIR}/${m}.exe"
+	if [ ! "${stable}" == "1" ] || [ ! -f "${exe}" ]; then
+		${NUMAKE} --depend "${exe}"
+	fi
 	mkdir -p $(dirname ${m})
-	cp ${deps} ${m}
+	cp ${exe} ${m}
 
 # A phony rule to register target as a static library
-static-lib:%: ${BUILD_DIR}/%.lib << BUILD_DIR ! live
+static-lib:%: << BUILD_DIR stable ! live
+	lib="${BUILD_DIR}/${m}.lib"
+	if [ ! "${stable}" == "1" ] || [ ! -f "${lib}" ]; then
+		${NUMAKE} --depend "${lib}"
+	fi
 	mkdir -p $(dirname ${m})
-	cp ${deps} ${m}
+	cp ${lib} ${m}
 
 # A temporary file will be built in the build directory.
 # This is to avoid linking if object files are not changed.

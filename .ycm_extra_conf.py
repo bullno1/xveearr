@@ -60,6 +60,8 @@ flags = [
 'deps/bgfx/include',
 '-I',
 'deps/bx/include',
+'-I',
+'.build/src',
 ]
 
 flags.extend(
