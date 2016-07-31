@@ -1,5 +1,6 @@
-#include <iostream>
+#include "DesktopEnvironment.hpp"
 #include <unordered_map>
+#include <vector>
 #include <SDL_syswm.h>
 #include <SDL.h>
 #include <bx/platform.h>
@@ -7,13 +8,9 @@
 #include <bx/macros.h>
 #include <bgfx/bgfxplatform.h>
 #include <bgfx/bgfx.h>
-#include "Application.hpp"
-#include "DesktopEnvironment.hpp"
-extern "C"
-{
-	#include <X11/Xlib.h>
-	#include <X11/extensions/Xcomposite.h>
-}
+#include <X11/Xlib-xcb.h>
+#include <xcb/composite.h>
+#include <xcb/glx.h>
 #define GLX_GLXEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -25,15 +22,17 @@ namespace xveearr
 namespace
 {
 
-struct Texture
+struct RebindReq
 {
 	bgfx::TextureHandle mBgfxHandle;
 	GLuint mGLHandle;
 };
 
-struct WindowData
+struct WindowData: WindowInfo
 {
-	Texture mTexture;
+	GLuint mGLTexture;
+	xcb_pixmap_t mCompositePixmap;
+	xcb_pixmap_t mGLXPixmap;
 };
 
 }
@@ -43,7 +42,7 @@ class XWindow: public DesktopEnvironment
 public:
 	XWindow()
 		:mDisplay(NULL)
-		,mHasXError(false)
+		,mXcbConn(NULL)
 		,mRendererContext(NULL)
 		,mWorkerContext(NULL)
 	{}
@@ -55,18 +54,65 @@ public:
 		mDisplay = XOpenDisplay(NULL);
 		if(mDisplay == NULL) { return false; }
 
-		XGrabServer(mDisplay);
-		for(int i = 0; i < ScreenCount(mDisplay); ++i)
-		{
-			Window rootWindow = RootWindow(mDisplay, i);
-			XCompositeRedirectSubwindows(
-				mDisplay, rootWindow, CompositeRedirectAutomatic
-			);
-			XSelectInput(mDisplay, rootWindow, SubstructureNotifyMask);
-		}
-		XUngrabServer(mDisplay);
+		mXcbConn = XGetXCBConnection(mDisplay);
+		XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
 
-		return checkXStatus();
+		xcb_generic_error_t *error;
+		xcb_void_cookie_t voidCookie;
+
+		voidCookie = xcb_grab_server_checked(mXcbConn);
+		if((error = xcb_request_check(mXcbConn, voidCookie)))
+		{
+			free(error);
+			return false;
+		}
+
+		int numScreens = xcb_setup_roots_length(xcb_get_setup(mXcbConn));
+		std::vector<xcb_void_cookie_t> cookies;
+		cookies.reserve(numScreens * 2);
+
+		xcb_screen_iterator_t itr;
+		for(
+			itr = xcb_setup_roots_iterator(xcb_get_setup(mXcbConn));
+			itr.rem;
+			xcb_screen_next(&itr)
+		)
+		{
+			xcb_window_t rootWindow = itr.data->root;
+
+			cookies.push_back(
+				xcb_composite_redirect_subwindows_checked(
+					mXcbConn, rootWindow, XCB_COMPOSITE_REDIRECT_AUTOMATIC
+				)
+			);
+
+			const uint32_t eventMask[] = {
+				XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY, 0
+			};
+			cookies.push_back(
+				xcb_change_window_attributes_checked(
+					mXcbConn, rootWindow, XCB_CW_EVENT_MASK, eventMask
+				)
+			);
+		}
+
+		voidCookie = xcb_ungrab_server_checked(mXcbConn);
+		if((error = xcb_request_check(mXcbConn, voidCookie)))
+		{
+			free(error);
+			return false;
+		}
+
+		for(xcb_void_cookie_t cookie: cookies)
+		{
+			if((error = xcb_request_check(mXcbConn, cookie)))
+			{
+				free(error);
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	void shutdown()
@@ -74,7 +120,7 @@ public:
 		if(mDisplay != NULL) { XCloseDisplay(mDisplay); }
 	}
 
-	void update()
+	bool pollEvent(WindowEvent& event)
 	{
 		if(BX_UNLIKELY(mRendererContext && !mWorkerContext))
 		{
@@ -101,7 +147,8 @@ public:
 			GLXFBConfig* configs = glXChooseFBConfig(
 				display, DefaultScreen(display), glxAttrs, &numConfigs
 			);
-			XVisualInfo* visualInfo = glXGetVisualFromFBConfig(display, configs[0]);
+			XVisualInfo* visualInfo =
+				glXGetVisualFromFBConfig(display, configs[0]);
 			mWorkerContext = glXCreateContext(
 				display, visualInfo, mRendererContext, GL_TRUE
 			);
@@ -111,49 +158,42 @@ public:
 			XUnlockDisplay(wminfo.info.x11.display);
 		}
 
-		int numEvents = XPending(mDisplay);
-		for(int i = 0; i < numEvents; ++i)
+		if(BX_UNLIKELY(!mWorkerContext))
 		{
-			XEvent ev;
-			XNextEvent(mDisplay, &ev);
+			xcb_generic_event_t* ev;
+			while((ev = xcb_poll_for_event(mXcbConn))) { free(ev); }
 
-			if(BX_UNLIKELY(!mWorkerContext)) { continue; }
-
-			switch(ev.type)
-			{
-				case MapNotify:
-					addWindow(ev.xmap.window);
-					break;
-				case UnmapNotify:
-					removeWindow(ev.xunmap.window);
-					break;
-				case ReparentNotify:
-					removeWindow(ev.xreparent.window);
-					break;
-			}
+			return false;
 		}
-	}
 
-	void enumerateWindows(WindowEnumFn enumFn, void* context)
-	{
-		for(std::pair<Window, WindowData>&& pair: mWindows)
+		xcb_generic_event_t* ev = xcb_poll_for_event(mXcbConn);
+		if(!ev) { return false; }
+
+		bool result;
+		switch(ev->response_type & ~0x80)
 		{
-			enumFn((uintptr_t)pair.first, context);
+			case XCB_MAP_NOTIFY:
+				result = onWindowAdded(
+					((xcb_map_notify_event_t*)ev)->window, event
+				);
+				break;
+			case XCB_UNMAP_NOTIFY:
+				result = onWindowRemoved(
+					((xcb_unmap_notify_event_t*)ev)->window, event
+				);
+				break;
+			case XCB_REPARENT_NOTIFY:
+				result = onWindowRemoved(
+					((xcb_reparent_notify_event_t*)ev)->window, event
+				);
+				break;
+			default:
+				result = false;
+				break;
 		}
-	}
 
-	bgfx::TextureHandle getTexture(WindowId wndId)
-	{
-		auto itr = mWindows.find(wndId);
-		if(itr == mWindows.end())
-		{
-			bgfx::TextureHandle invalidHandle = BGFX_INVALID_HANDLE;
-			return invalidHandle;
-		}
-		else
-		{
-			return itr->second.mTexture.mBgfxHandle;
-		}
+		free(ev);
+		return result;
 	}
 
 	void beginRender()
@@ -169,76 +209,119 @@ public:
 
 		while(mRebindQueue.peek())
 		{
-			Texture* texture = mRebindQueue.pop();
-			bgfx::overrideInternal(texture->mBgfxHandle, texture->mGLHandle);
-			delete texture;
+			RebindReq* req = mRebindQueue.pop();
+			bgfx::overrideInternal(req->mBgfxHandle, req->mGLHandle);
+			delete req;
 		}
 	}
 
-	void getWindowSize(WindowId id, unsigned int& width, unsigned int& height)
+	const WindowInfo* getWindowInfo(WindowId id)
 	{
-		Window root;
-		int x, y;
-		unsigned borderWidth, depth;
-		XGetGeometry(
-			mDisplay, id,
-			&root,
-			&x, &y,
-			&width, &height,
-			&borderWidth,
-			&depth
-		);
-
-		if(!checkXStatus())
-		{
-			width = 0;
-			height = 0;
-		}
+		auto itr = mWindows.find(id);
+		return itr != mWindows.end() ? &itr->second : NULL;
 	}
 
 private:
-	bool checkXStatus()
-	{
-		XSync(mDisplay, false);
-
-		bool hasError = mHasXError;
-		mHasXError = false;
-		return !hasError;
-	}
-
-	void addWindow(Window window)
+	bool onWindowAdded(xcb_window_t window, WindowEvent& event)
 	{
 		auto itr = mWindows.find(window);
-		if(itr != mWindows.end()) { return; }
+		if(itr != mWindows.end()) { return false; }
 
-		WindowData data;
-		data.mTexture.mBgfxHandle =
-			bgfx::createTexture2D(1, 1, 0, bgfx::TextureFormat::RGBA8);
-		glGenTextures(1, &data.mTexture.mGLHandle);
-		glBindTexture(GL_TEXTURE_2D, data.mTexture.mGLHandle);
+		xcb_pixmap_t pixmap;
+		GLXFBConfig fbConfig;
+		xcb_get_geometry_reply_t geom;
+		if(!getWindowInfo(window, geom, pixmap, fbConfig))
+		{
+			return false;
+		}
+
+		const int pixmapAttrs[] = {
+			GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+			GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGBA_EXT,
+			None
+		};
+		GLXPixmap glxPixmap =
+			glXCreatePixmap(mDisplay, fbConfig, pixmap, pixmapAttrs);
+
+		GLuint glTexture;
+		glGenTextures(1, &glTexture);
+		glBindTexture(GL_TEXTURE_2D, glTexture);
+		glXBindTexImageEXT(mDisplay, glxPixmap, GLX_FRONT_LEFT_EXT, NULL);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		bindWindowToTexture(window, data.mTexture.mGLHandle);
+		glFinish();
+
+		bgfx::TextureHandle bgfxTexture =
+			bgfx::createTexture2D(1, 1, 0, bgfx::TextureFormat::RGBA8);
+
+		WindowData data;
+		data.mGLTexture = glTexture;
+		data.mCompositePixmap = pixmap;
+		data.mGLXPixmap = glxPixmap;
+		data.mTexture = bgfxTexture;
+		data.mX = geom.x;
+		data.mY = geom.y;
+		data.mWidth = geom.width;
+		data.mHeight = geom.height;
 		mWindows.insert(std::make_pair(window, data));
 
-		mRebindQueue.push(new Texture(data.mTexture));
+		RebindReq* req = new RebindReq;
+		req->mGLHandle = glTexture;
+		req->mBgfxHandle = bgfxTexture;
+		mRebindQueue.push(req);
+
+		event.mType = WindowEvent::WindowAdded;
+		event.mId = window;
+		event.mInfo = data;
+		return true;
 	}
 
-	void removeWindow(Window window)
+	bool onWindowRemoved(xcb_window_t window, WindowEvent& event)
 	{
 		auto itr = mWindows.find(window);
-		if(itr == mWindows.end()) { return; }
+		if(itr == mWindows.end()) { return false; }
 
-		bgfx::destroyTexture(itr->second.mTexture.mBgfxHandle);
+		bgfx::destroyTexture(itr->second.mTexture);
 		mWindows.erase(itr);
+
+		event.mType = WindowEvent::WindowRemoved;
+		event.mId = window;
+		return true;
 	}
 
-	void bindWindowToTexture(Window window, GLuint texture)
+	bool getWindowInfo(
+		xcb_window_t window,
+		xcb_get_geometry_reply_t& geom,
+		xcb_pixmap_t& pixmap,
+		GLXFBConfig& fbConfig
+	)
 	{
-		XWindowAttributes winAttrs;
-		XGetWindowAttributes(mDisplay, window, &winAttrs);
-		// TODO: signal that we gave up
-		if(winAttrs.depth == 0) { return; }
+		pixmap = xcb_generate_id(mXcbConn);
+		xcb_get_geometry_cookie_t getGeomCookie =
+			xcb_get_geometry(mXcbConn, window);
+		xcb_void_cookie_t namePixmapCookie =
+			xcb_composite_name_window_pixmap_checked(mXcbConn, window, pixmap);
+		xcb_get_geometry_reply_t* geomReply =
+			xcb_get_geometry_reply(mXcbConn, getGeomCookie, NULL);
+		xcb_generic_error_t* namePixmapError =
+			xcb_request_check(mXcbConn, namePixmapCookie);
+
+		if(geomReply == NULL || namePixmapError != NULL)
+		{
+			if(geomReply != NULL) { free(geomReply); }
+			if(namePixmapError != NULL) { free(namePixmapError); }
+
+			return false;
+		}
+
+		geom = *geomReply;
+		free(geomReply);
+
+		if(geom.depth == 0)
+		{
+			xcb_free_pixmap(mXcbConn, pixmap);
+			return false;
+		}
 
 		const int pixmapConfig[] = {
 			GLX_BIND_TO_TEXTURE_RGBA_EXT, True,
@@ -249,64 +332,48 @@ private:
 			None
 		};
 
-		const int pixmapAttrs[] = {
-			GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
-			GLX_TEXTURE_FORMAT_EXT, GLX_TEXTURE_FORMAT_RGBA_EXT,
-			None
-		};
-
 		int numConfigs = 0;
-		GLXFBConfig* configs =
+		GLXFBConfig* fbConfigs =
 			glXChooseFBConfig(mDisplay, 0, pixmapConfig, &numConfigs);
 
-		int i;
-		for(i = 0; i < numConfigs; ++i)
+		for(int i = 0; i < numConfigs; ++i)
 		{
-			XVisualInfo* visualInfo = glXGetVisualFromFBConfig(mDisplay, configs[i]);
-			int depth = visualInfo->depth;
-			XFree(visualInfo);
+			XVisualInfo* visualInfo =
+				glXGetVisualFromFBConfig(mDisplay, fbConfigs[i]);
 
-			if(depth == winAttrs.depth)
+			if(visualInfo->depth == geom.depth)
 			{
-				break;
+				fbConfig = fbConfigs[i];
+				XFree(visualInfo);
+				XFree(fbConfigs);
+				return true;
 			}
+
+			XFree(visualInfo);
 		}
 
-		Pixmap pixmap = XCompositeNameWindowPixmap(mDisplay, window);
-
-		GLXPixmap glxPixmap =
-			glXCreatePixmap(mDisplay, configs[i],  pixmap, pixmapAttrs);
-		glBindTexture(GL_TEXTURE_2D, texture);
-		glXBindTexImageEXT(mDisplay, glxPixmap, GLX_FRONT_LEFT_EXT, NULL);
-		glFinish();
-
-		XFree(configs);
-	}
-
-	void onXError(const XErrorEvent& error)
-	{
-		(void)error;
-		mHasXError = true;
-	}
-
-	static int onXError(Display* display, XErrorEvent* error)
-	{
-		(void)display;
-		((XWindow&)DesktopEnvironment::getInstance()).onXError(*error);
-		return 0;
+		XFree(fbConfigs);
+		return false;
 	}
 
 	Display* mDisplay;
-	std::unordered_map<Window, WindowData> mWindows;
+	xcb_connection_t* mXcbConn;
 	SDL_Window* mWindow;
-	bx::SpScUnboundedQueue<Texture> mRebindQueue;
-	bool mHasXError;
 	GLXContext mRendererContext;
 	GLXContext mWorkerContext;
+	std::unordered_map<Window, WindowData> mWindows;
+	bx::SpScUnboundedQueue<RebindReq> mRebindQueue;
 };
 
+#if BX_PLATFORM_LINUX == 1
+
+static XWindow gXWindowInstance;
+
+DesktopEnvironment* DesktopEnvironment::getInstance()
+{
+	return &gXWindowInstance;
 }
 
-#if BX_PLATFORM_LINUX == 1
-	XVEEARR_DECLARE_DE(XWindow)
 #endif
+
+}

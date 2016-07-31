@@ -4,38 +4,56 @@
 #include <cstdint>
 #include <bgfx/bgfx.h>
 
-#define XVEEARR_DECLARE_DE(CLASS) \
-	namespace xveearr { \
-		CLASS gDEInstance; \
-		DesktopEnvironment* DesktopEnvironment::sInstance = &gDEInstance; \
-	}
+struct SDL_Window;
 
 namespace xveearr
 {
 
-struct ApplicationContext;
+struct ApplicationContext
+{
+	int mArgc;
+	const char** mArgv;
+	SDL_Window* mWindow;
+};
 
 typedef uintptr_t WindowId;
 
-typedef void(*WindowEnumFn)(WindowId, void*);
+struct WindowInfo
+{
+	bgfx::TextureHandle mTexture;
+	unsigned int mX;
+	unsigned int mY;
+	unsigned int mWidth;
+	unsigned int mHeight;
+};
+
+struct WindowEvent
+{
+	enum Type
+	{
+		WindowAdded,
+		WindowRemoved,
+		WindowUpdated,
+
+		Count
+	};
+
+	Type mType;
+	WindowId mId;
+	WindowInfo mInfo;
+};
 
 class DesktopEnvironment
 {
 public:
 	virtual bool init(const ApplicationContext& appCtx) = 0;
 	virtual void shutdown() = 0;
-	virtual void update() = 0;
+	virtual bool pollEvent(WindowEvent& event) = 0;
 	virtual void beginRender() = 0;
 	virtual void endRender() = 0;
-	virtual bgfx::TextureHandle getTexture(WindowId wndId) = 0;
-	virtual void enumerateWindows(WindowEnumFn enumFn, void* context) = 0;
-	virtual void getWindowSize(
-		WindowId wndId, unsigned int& width, unsigned int& height) = 0;
+	virtual const WindowInfo* getWindowInfo(WindowId id) = 0;
 
-	static DesktopEnvironment& getInstance() { return *sInstance; }
-
-private:
-	static DesktopEnvironment* sInstance;
+	static DesktopEnvironment* getInstance();
 };
 
 }
