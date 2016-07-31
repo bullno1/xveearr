@@ -79,7 +79,7 @@ private:
 	{
 		if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { return 1; }
 
-		SDL_Window* mWindow = SDL_CreateWindow(
+		mWindow = SDL_CreateWindow(
 			"Xveearr",
 			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 			1280, 720,
@@ -153,6 +153,11 @@ private:
 
 	void shutdown()
 	{
+		bgfx::destroyUniform(mTextureUniform);
+		bgfx::destroyProgram(mProgram);
+		bgfx::destroyIndexBuffer(mQuadIndices);
+		bgfx::destroyVertexBuffer(mQuad);
+
 		bgfx::shutdown();
 		if(mRenderThread.isRunning()) { mRenderThread.shutdown(); }
 
