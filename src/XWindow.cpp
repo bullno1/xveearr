@@ -282,6 +282,8 @@ private:
 		if(itr == mWindows.end()) { return false; }
 
 		bgfx::destroyTexture(itr->second.mTexture);
+		xcb_free_pixmap(mXcbConn, itr->second.mCompositePixmap);
+		xcb_free_pixmap(mXcbConn, itr->second.mGLXPixmap);
 		mWindows.erase(itr);
 
 		event.mType = WindowEvent::WindowRemoved;
