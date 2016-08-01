@@ -106,7 +106,7 @@ private:
 		int width, height;
 		SDL_GetWindowSize(appCtx.mWindow, &width, &height);
 		bgfx::reset(width, height, BGFX_RESET_VSYNC);
-		bgfx::setDebug(BGFX_DEBUG_TEXT);
+		bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 		bgfx::setViewRect(0, 0, 0, width, height);
 		bgfx::setViewClear(
 			0,
@@ -183,10 +183,13 @@ private:
 				switch(windowEvent.mType)
 				{
 					case WindowEvent::WindowAdded:
-						onWindowsAdded(windowEvent);
+						onWindowAdded(windowEvent);
 						break;
 					case WindowEvent::WindowRemoved:
-						onWindowsRemoved(windowEvent);
+						onWindowRemoved(windowEvent);
+						break;
+					case WindowEvent::WindowUpdated:
+						onWindowUpdated(windowEvent);
 						break;
 				}
 			}
@@ -206,7 +209,7 @@ private:
 		}
 	}
 
-	void onWindowsAdded(const WindowEvent& event)
+	void onWindowAdded(const WindowEvent& event)
 	{
 		WindowData wndData;
 		wndData.mInfo = event.mInfo;
@@ -215,12 +218,24 @@ private:
 			0.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 0.0f
 		);
-		mWindows.insert(std::make_pair(event.mId, wndData));
+		mWindows.insert(std::make_pair(event.mWindow, wndData));
 	}
 
-	void onWindowsRemoved(const WindowEvent& event)
+	void onWindowRemoved(const WindowEvent& event)
 	{
-		mWindows.erase(event.mId);
+		mWindows.erase(event.mWindow);
+	}
+
+	void onWindowUpdated(const WindowEvent& event)
+	{
+		WindowData& wndData = mWindows.find(event.mWindow)->second;
+
+		wndData.mInfo = event.mInfo;
+		bx::mtxSRT(wndData.mTransform,
+			event.mInfo.mWidth, event.mInfo.mHeight, 1.0f,
+			0.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.0f
+		);
 	}
 
 	static int32_t renderThread(void* userData)
@@ -230,6 +245,7 @@ private:
 		// Ensure that this thread is registered as the render thread before
 		// bgfx is initialized
 		bgfx::renderFrame();
+		app->mDesktopEnvironment->initRenderer();
 		app->mRenderThreadReadySem.post();
 
 		while(true)
@@ -244,6 +260,7 @@ private:
 			}
 		}
 
+		app->mDesktopEnvironment->shutdownRenderer();
 		return 0;
 	}
 

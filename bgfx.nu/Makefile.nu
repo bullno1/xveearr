@@ -33,9 +33,16 @@ bin/shaderc: << CPP_FLAGS
 		stable=1
 
 bin/libbgfx.a:
+	FLAGS=" \
+		-Ideps/bgfx/include \
+		-Ideps/bgfx/3rdparty \
+		-Ideps/bgfx/3rdparty/khronos \
+		-Ideps/bx/include \
+		-O2
+	"
 	${NUMAKE} static-lib:$@ \
 		sources="deps/bgfx/src/amalgamated.cpp" \
-		cpp_flags="-Ideps/bgfx/include -Ideps/bgfx/3rdparty -Ideps/bgfx/3rdparty/khronos -Ideps/bx/include -O2" \
+		cpp_flags="${FLAGS}"
 		stable=1
 
 SHADERC = $(readlink -f shaderc)

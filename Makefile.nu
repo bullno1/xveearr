@@ -6,7 +6,7 @@ CPP_FLAGS ?= -g -Wall -Wextra -Werror -pedantic -Wno-switch -pthread -O2
 all: bin/xveearr ! live
 
 bin/xveearr: shaders << CPP_FLAGS BUILD_DIR
-	SYS_LIBS="x11-xcb xcb xcb-composite xcomposite sdl2 gl"
+	SYS_LIBS="x11-xcb xcb xcb-composite xcb-glx xcb-util sdl2 gl"
 	FLAGS=" \
 		-isystem deps/bgfx/include \
 		-isystem deps/bx/include \

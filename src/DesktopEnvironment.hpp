@@ -39,7 +39,7 @@ struct WindowEvent
 	};
 
 	Type mType;
-	WindowId mId;
+	WindowId mWindow;
 	WindowInfo mInfo;
 };
 
@@ -49,6 +49,8 @@ public:
 	virtual bool init(const ApplicationContext& appCtx) = 0;
 	virtual void shutdown() = 0;
 	virtual bool pollEvent(WindowEvent& event) = 0;
+	virtual void initRenderer() = 0;
+	virtual void shutdownRenderer() = 0;
 	virtual void beginRender() = 0;
 	virtual void endRender() = 0;
 	virtual const WindowInfo* getWindowInfo(WindowId id) = 0;
