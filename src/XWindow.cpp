@@ -37,7 +37,6 @@ struct TextureReq
 	Type mType;
 	bgfx::TextureHandle mBgfxHandle;
 	xcb_window_t mWindow;
-	int mFBConfigId;
 };
 
 struct TextureInfo
@@ -262,6 +261,7 @@ public:
 				NULL
 			);
 		}
+		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	void endRender()
@@ -275,6 +275,7 @@ public:
 				GLX_FRONT_LEFT_EXT
 			);
 		}
+		glBindTexture(GL_TEXTURE_2D, 0);
 
 		for(const TextureReq& req: mDeferredTextureReqs)
 		{
@@ -358,16 +359,25 @@ private:
 		auto itr = mWindows.find(event.mWindow);
 		if(itr != mWindows.end()) { return false; }
 
-		int fbConfigId;
-		WindowInfo wndInfo;
-		if(!getWindowInfo(event.mWindow, wndInfo, fbConfigId))
-		{
-			return false;
-		}
+		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
+			mXcbConn, xcb_get_geometry(mXcbConn, event.mWindow), NULL
+		);
+
+		if(geomReply == NULL) { return false; }
+
+		xcb_get_geometry_reply_t geom = *geomReply;
+		free(geomReply);
+
+		if(geom.depth == 0) { return false; }
 
 		bgfx::TextureHandle texture =
 			bgfx::createTexture2D(1, 1, 0, bgfx::TextureFormat::RGBA8);
 
+		WindowInfo wndInfo;
+		wndInfo.mX = geom.x;
+		wndInfo.mY = geom.y;
+		wndInfo.mWidth = geom.width;
+		wndInfo.mHeight = geom.height;
 		wndInfo.mTexture = texture;
 		mWindows.insert(std::make_pair(event.mWindow, wndInfo));
 
@@ -375,7 +385,6 @@ private:
 		req->mType = TextureReq::Bind;
 		req->mBgfxHandle = texture;
 		req->mWindow = event.mWindow;
-		req->mFBConfigId = fbConfigId;
 		mTextureReqs.push(req);
 
 		event.mInfo = wndInfo;
@@ -418,78 +427,13 @@ private:
 			return true;
 		}
 
-		int fbConfigId;
-		if(!getWindowInfo(event.mWindow, wndInfo, fbConfigId))
-		{
-			return false;
-		}
-
 		TextureReq* req = new TextureReq;
 		req->mType = TextureReq::Rebind;
 		req->mBgfxHandle = wndInfo.mTexture;
-		req->mFBConfigId = fbConfigId;
 		mTextureReqs.push(req);
 
 		event.mInfo = wndInfo;
 		return true;
-	}
-
-	bool getWindowInfo(
-		xcb_window_t window,
-		WindowInfo& wndInfo,
-		int& fbConfigId
-	)
-	{
-		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
-			mXcbConn, xcb_get_geometry(mXcbConn, window), NULL
-		);
-
-		if(geomReply == NULL) { return false; }
-
-		xcb_get_geometry_reply_t geom = *geomReply;
-		free(geomReply);
-
-		if(geom.depth == 0) { return false; }
-
-		const int pixmapConfig[] = {
-			GLX_BIND_TO_TEXTURE_RGBA_EXT, True,
-			GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
-			GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
-			GLX_DOUBLEBUFFER, False,
-			GLX_Y_INVERTED_EXT, (int)GLX_DONT_CARE,
-			None
-		};
-
-		int numConfigs = 0;
-		GLXFBConfig* fbConfigs =
-			glXChooseFBConfig(mDisplay, 0, pixmapConfig, &numConfigs);
-
-		for(int i = 0; i < numConfigs; ++i)
-		{
-			XVisualInfo* visualInfo =
-				glXGetVisualFromFBConfig(mDisplay, fbConfigs[i]);
-
-			if(visualInfo->depth == geom.depth)
-			{
-				wndInfo.mX = geom.x;
-				wndInfo.mY = geom.y;
-				wndInfo.mWidth = geom.width;
-				wndInfo.mHeight = geom.height;
-				glXGetFBConfigAttrib(
-					mDisplay, fbConfigs[i], GLX_FBCONFIG_ID, &fbConfigId
-				);
-				XFree(visualInfo);
-				XFree(fbConfigs);
-
-				return true;
-			}
-
-			XFree(visualInfo);
-		}
-
-		XFree(fbConfigs);
-
-		return false;
 	}
 
 	void executeTextureReq(const TextureReq& req)
@@ -510,14 +454,16 @@ private:
 
 	void bindTexture(const TextureReq& req)
 	{
-		xcb_pixmap_t compositePixmap = xcb_generate_id(mRendererXcbConn);
-		xcb_composite_name_window_pixmap(
-			mRendererXcbConn, req.mWindow, compositePixmap
-		);
+		xcb_pixmap_t compositePixmap;
+		int fbConfig;
+		if(!getCompositePixmap(req.mWindow, compositePixmap, fbConfig))
+		{
+			return;
+		}
 
 		xcb_glx_pixmap_t glxPixmap = xcb_generate_id(mRendererXcbConn);
 		xcb_glx_create_pixmap(
-			mRendererXcbConn, 0, req.mFBConfigId, compositePixmap, glxPixmap,
+			mRendererXcbConn, 0, fbConfig, compositePixmap, glxPixmap,
 			BX_COUNTOF(GLX_PIXMAP_ATTRS) / 2,
 			GLX_PIXMAP_ATTRS
 		);
@@ -527,6 +473,8 @@ private:
 		glBindTexture(GL_TEXTURE_2D, glTexture);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 		TextureInfo texInfo;
 		texInfo.mWindow = req.mWindow;
@@ -556,17 +504,20 @@ private:
 		if(itr == mTextures.end()) { return; }
 
 		TextureInfo& texInfo = itr->second;
+
+		xcb_pixmap_t compositePixmap;
+		int fbConfig;
+		if(!getCompositePixmap(texInfo.mWindow, compositePixmap, fbConfig))
+		{
+			return;
+		}
+
 		xcb_glx_destroy_pixmap(mRendererXcbConn, texInfo.mGLXPixmap);
 		xcb_free_pixmap(mRendererXcbConn, texInfo.mCompositePixmap);
 
-		xcb_pixmap_t compositePixmap = xcb_generate_id(mRendererXcbConn);
-		xcb_composite_name_window_pixmap(
-			mRendererXcbConn, texInfo.mWindow, compositePixmap
-		);
-
 		xcb_glx_pixmap_t glxPixmap = xcb_generate_id(mRendererXcbConn);
 		xcb_glx_create_pixmap(
-			mRendererXcbConn, 0, req.mFBConfigId, compositePixmap, glxPixmap,
+			mRendererXcbConn, 0, fbConfig, compositePixmap, glxPixmap,
 			BX_COUNTOF(GLX_PIXMAP_ATTRS) / 2,
 			GLX_PIXMAP_ATTRS
 		);
@@ -574,6 +525,81 @@ private:
 		texInfo.mCompositePixmap = compositePixmap;
 		texInfo.mGLXPixmap = glxPixmap;
 	}
+
+	bool getCompositePixmap(
+		xcb_window_t window,
+		xcb_pixmap_t& compositePixmap,
+		int& fbConfig
+	)
+	{
+		xcb_pixmap_t pixmap = xcb_generate_id(mRendererXcbConn);
+		xcb_void_cookie_t namePixmapCookie =
+			xcb_composite_name_window_pixmap_checked(
+				mRendererXcbConn, window, pixmap
+			);
+		xcb_get_geometry_cookie_t getGeomCookie = xcb_get_geometry(
+			mRendererXcbConn, window
+		);
+
+		xcb_generic_error_t* namePixmapError = xcb_request_check(
+			mRendererXcbConn, namePixmapCookie
+		);
+		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
+			mRendererXcbConn, getGeomCookie, NULL
+		);
+
+		if(namePixmapError != NULL || geomReply == NULL || geomReply->depth == 0)
+		{
+			if(!namePixmapError)
+			{
+				xcb_free_pixmap(mRendererXcbConn, pixmap);
+			}
+
+			free(namePixmapError);
+			free(geomReply);
+			return false;
+		}
+
+		xcb_get_geometry_reply_t geom = *geomReply;
+		free(geomReply);
+
+		const int pixmapConfig[] = {
+			GLX_BIND_TO_TEXTURE_RGBA_EXT, True,
+			GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
+			GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
+			GLX_DOUBLEBUFFER, False,
+			GLX_Y_INVERTED_EXT, (int)GLX_DONT_CARE,
+			None
+		};
+
+		int numConfigs = 0;
+		GLXFBConfig* fbConfigs =
+			glXChooseFBConfig(mDisplay, 0, pixmapConfig, &numConfigs);
+
+		for(int i = 0; i < numConfigs; ++i)
+		{
+			XVisualInfo* visualInfo =
+				glXGetVisualFromFBConfig(mDisplay, fbConfigs[i]);
+
+			if(visualInfo->depth == geom.depth)
+			{
+				compositePixmap = pixmap;
+				glXGetFBConfigAttrib(
+					mDisplay, fbConfigs[i], GLX_FBCONFIG_ID, &fbConfig
+				);
+				XFree(visualInfo);
+				XFree(fbConfigs);
+
+				return true;
+			}
+
+			XFree(visualInfo);
+		}
+
+		XFree(fbConfigs);
+		return false;
+	}
+
 
 	Display* mDisplay;
 	Display* mRendererDisplay;
