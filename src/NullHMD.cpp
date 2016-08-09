@@ -1,5 +1,6 @@
 #include "IHMD.hpp"
 #include <bx/fpumath.h>
+#include <SDL.h>
 #include "Registry.hpp"
 
 namespace xveearr
@@ -10,6 +11,9 @@ namespace
 
 const unsigned int gViewportWidth = 1280 / 2;
 const unsigned int gViewportHeight = 720;
+const float gLeftEye[] = { -50.0f, 0.0f, 0.f };
+const float gRightEye[] = { 50.0f, 0.0f, 0.f };
+float gLookAt[] = { 0.f, 0.0f, -10.f };
 
 }
 
@@ -24,6 +28,11 @@ public:
 
 	bool init(const ApplicationContext&)
 	{
+		bx::mtxSRT(mHeadTransform,
+			1.f, 1.f, 1.f,
+			0.f, 0.f, 0.f,
+			0.f, 0.f, 600.f);
+
 		return true;
 	}
 
@@ -57,28 +66,6 @@ public:
 			gViewportWidth, gViewportHeight,
 			bgfx::TextureFormat::RGBA8
 		);
-
-		float leftEye[] = { -50.0f, 0.0f, 600.f };
-		float leftLookAt[] = { -50.0f, 0.0f, 0.f };
-		bx::mtxLookAtRh(
-			mRenderData[Eye::Left].mViewTransform, leftEye, leftLookAt
-		);
-		bx::mtxProjRh(mRenderData[Eye::Left].mViewProjection,
-			50.0f,
-			(float)gViewportWidth / (float)gViewportHeight,
-			1.f, 100000.f
-		);
-
-		float rightEye[] = { 50.0f, 0.0f, 600.f };
-		float rightLookAt[] = { 50.0f, 0.0f, 0.f };
-		bx::mtxLookAtRh(
-			mRenderData[Eye::Right].mViewTransform, rightEye, rightLookAt
-		);
-		bx::mtxProjRh(mRenderData[Eye::Right].mViewProjection,
-			50.0f,
-			(float)gViewportWidth / (float)gViewportHeight,
-			1.f, 100000.f
-		);
 	}
 
 	void releaseResources()
@@ -107,6 +94,58 @@ public:
 
 	void update()
 	{
+		const Uint8* keyStates = SDL_GetKeyboardState(NULL);
+		float translation[3] = {};
+		float rotation[3] = {};
+
+		if(keyStates[SDL_SCANCODE_A]) { translation[0] = -4.f; }
+		if(keyStates[SDL_SCANCODE_D]) { translation[0] =  4.f; }
+		if(keyStates[SDL_SCANCODE_W]) { translation[2] = -4.f; }
+		if(keyStates[SDL_SCANCODE_S]) { translation[2] =  4.f; }
+		if(keyStates[SDL_SCANCODE_Q]) { rotation[1] = -0.01f; }
+		if(keyStates[SDL_SCANCODE_E]) { rotation[1] =  0.01f; }
+		if(keyStates[SDL_SCANCODE_R]) { rotation[0] = -0.01f; }
+		if(keyStates[SDL_SCANCODE_F]) { rotation[0] =  0.01f; }
+
+		float move[16];
+		bx::mtxSRT(move,
+			1.f, 1.f, 1.f,
+			rotation[0], rotation[1], rotation[2],
+			translation[0], translation[1], translation[2]
+		);
+		float tmp[16];
+		memcpy(tmp, mHeadTransform, sizeof(tmp));
+		bx::mtxMul(mHeadTransform, move, tmp);
+
+		float leftEye[3];
+		float leftLookAt[3];
+		float leftRelLookat[3];
+		bx::vec3MulMtx(leftEye, gLeftEye, mHeadTransform);
+		bx::vec3Add(leftRelLookat, gLeftEye, gLookAt);
+		bx::vec3MulMtx(leftLookAt, leftRelLookat, mHeadTransform);
+		bx::mtxLookAtRh(
+			mRenderData[Eye::Left].mViewTransform, leftEye, leftLookAt
+		);
+		bx::mtxProjRh(mRenderData[Eye::Left].mViewProjection,
+			50.0f,
+			(float)gViewportWidth / (float)gViewportHeight,
+			1.f, 100000.f
+		);
+
+		float rightEye[3];
+		float rightLookAt[3];
+		float rightRelLookat[3];
+		bx::vec3MulMtx(rightEye, gRightEye, mHeadTransform);
+		bx::vec3Add(rightRelLookat, gRightEye, gLookAt);
+		bx::vec3MulMtx(rightLookAt, rightRelLookat, mHeadTransform);
+		bx::mtxLookAtRh(
+			mRenderData[Eye::Right].mViewTransform, rightEye, rightLookAt
+		);
+		bx::mtxProjRh(mRenderData[Eye::Right].mViewProjection,
+			50.0f,
+			(float)gViewportWidth / (float)gViewportHeight,
+			1.f, 100000.f
+		);
 	}
 
 	const RenderData& getRenderData(Eye::Enum eye)
@@ -115,6 +154,7 @@ public:
 	}
 
 private:
+	float mHeadTransform[16];
 	RenderData mRenderData[Eye::Count];
 };
 
