@@ -7,9 +7,15 @@
 #include <bx/thread.h>
 #include <bx/sem.h>
 #include <bx/fpumath.h>
+#include <bx/commandline.h>
 #include "shaders/quad.vsh.h"
 #include "shaders/quad.fsh.h"
-#include "DesktopEnvironment.hpp"
+#include "IDesktopEnvironment.hpp"
+#include "IHMD.hpp"
+#include "Registry.hpp"
+
+XVR_DECLARE_REGISTRY(xveearr::IHMD)
+XVR_DECLARE_REGISTRY(xveearr::IDesktopEnvironment)
 
 namespace xveearr
 {
@@ -49,6 +55,19 @@ static const uint16_t gIndicies[] =
 	2, 3, 0
 };
 
+struct RenderPass
+{
+	enum Enum {
+		LeftEye,
+		RightEye,
+		Mirror,
+
+		Count
+	};
+};
+
+static const uint32_t gClearColor = 0x303030ff;
+
 struct WindowData
 {
 	WindowInfo mInfo;
@@ -60,8 +79,26 @@ struct WindowData
 class Application
 {
 public:
+	Application()
+		:mHMD(NULL)
+		,mWindow(NULL)
+		,mBgfxInitialized(false)
+		,mDesktopEnvironment(NULL)
+	{
+		mQuad = BGFX_INVALID_HANDLE;
+		mQuadIndices = BGFX_INVALID_HANDLE;
+		mProgram = BGFX_INVALID_HANDLE;
+		mTextureUniform = BGFX_INVALID_HANDLE;
+	}
+
 	int run(int argc, const char* argv[])
 	{
+		bx::CommandLine cmdLine(argc, argv);
+		if(cmdLine.hasArg("help"))
+		{
+			return showHelp();
+		}
+
 		if(!init(argc, argv))
 		{
 			shutdown();
@@ -75,25 +112,70 @@ public:
 	}
 
 private:
+	int showHelp()
+	{
+		printf("Usage: xveearr --help\n");
+		printf("       xveearr [ --hmd <HMD> ]\n");
+		printf("\n");
+		printf("    -h, -hmd <HMD>                   HMD driver (openvr, null)\n");
+
+		return EXIT_SUCCESS;
+	}
+
 	bool init(int argc, const char* argv[])
 	{
-		if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { return 1; }
+		bx::CommandLine cmdLine(argc, argv);
+		const char* hmdName = cmdLine.findOption('h', "hmd", "null");
+
+		for(IHMD& hmd: Registry<IHMD>::all())
+		{
+			if(strcmp(hmd.getName(),  hmdName) == 0)
+			{
+				mHMD = &hmd;
+				break;
+			}
+		}
+
+		if(mHMD == NULL)
+		{
+			return false;
+		}
+
+		ApplicationContext appCtx;
+		appCtx.mArgc = argc;
+		appCtx.mArgv = argv;
+
+		if(!mHMD->init(appCtx)) { return false; }
+
+		if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { return false; }
+
+		unsigned int width, height;
+		mHMD->getViewportSize(width, height);
 
 		mWindow = SDL_CreateWindow(
 			"Xveearr",
 			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-			1280, 720,
+			width * 2, height,
 			SDL_WINDOW_SHOWN
 		);
 
 		if(!mWindow) { return false; }
 
-		mDesktopEnvironment = DesktopEnvironment::getInstance();
+		for(IDesktopEnvironment& de: Registry<IDesktopEnvironment>::all())
+		{
+			if(de.init(appCtx))
+			{
+				mDesktopEnvironment = &de;
+				break;
+			}
+			else
+			{
+				de.shutdown();
+			}
+		}
+
 		if(!mDesktopEnvironment) { return false; }
 
-		ApplicationContext appCtx;
-		appCtx.mArgc = argc;
-		appCtx.mArgv = argv;
 		appCtx.mWindow = mWindow;
 		if(!mDesktopEnvironment->init(appCtx)) { return false; }
 
@@ -102,32 +184,37 @@ private:
 
 		bgfx::sdlSetWindow(mWindow);
 		if(!bgfx::init()) { return false; }
+		mBgfxInitialized = true;
 
-		int width, height;
-		SDL_GetWindowSize(appCtx.mWindow, &width, &height);
-		bgfx::reset(width, height, BGFX_RESET_VSYNC);
-		bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
-		bgfx::setViewRect(0, 0, 0, width, height);
+		mHMD->prepareResources();
+
+		bgfx::reset(width * 2, height, BGFX_RESET_VSYNC);
+		bgfx::setDebug(BGFX_DEBUG_TEXT);
+
+		const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
+		bgfx::setViewRect(RenderPass::LeftEye, 0, 0, width, height);
+		bgfx::setViewFrameBuffer(RenderPass::LeftEye, leftEye.mFrameBuffer);
 		bgfx::setViewClear(
-			0,
-			BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH,
-			0x303030ff,
-			1.0f,
-			0
+			RenderPass::LeftEye, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH, gClearColor
+		);
+
+		const RenderData& rightEye = mHMD->getRenderData(Eye::Right);
+		bgfx::setViewRect(RenderPass::RightEye, 0, 0, width, height);
+		bgfx::setViewFrameBuffer(RenderPass::RightEye, rightEye.mFrameBuffer);
+		bgfx::setViewClear(
+			RenderPass::RightEye, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH, gClearColor
+		);
+
+		bgfx::setViewRect(RenderPass::Mirror, 0, 0, width * 2, height);
+		bgfx::setViewClear(
+			RenderPass::Mirror, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH, 0
 		);
 
 		float view[16];
-		float eye[] = { 0.f, 0.f, 300.f };
-		float at[] = { -300.f, 100.f, 0.f };
-		bx::mtxLookAtRh(view, eye, at);
-
 		float proj[16];
-		bx::mtxProjRh(proj,
-			50.0f,
-			(float)width / (float)height,
-			1.0f, 100000.f
-		);
-		bgfx::setViewTransform(0, view, proj);
+		bx::mtxIdentity(view);
+		bx::mtxOrthoRh(proj, 0, width * 2, 0, height, -1.0f, 1.0f);
+		bgfx::setViewTransform(RenderPass::Mirror, view, proj);
 
 		Vertex::init();
 		mQuad = bgfx::createVertexBuffer(
@@ -153,22 +240,43 @@ private:
 
 	void shutdown()
 	{
-		bgfx::destroyUniform(mTextureUniform);
-		bgfx::destroyProgram(mProgram);
-		bgfx::destroyIndexBuffer(mQuadIndices);
-		bgfx::destroyVertexBuffer(mQuad);
+		if(bgfx::isValid(mTextureUniform)) { bgfx::destroyUniform(mTextureUniform); }
+		if(bgfx::isValid(mProgram)) { bgfx::destroyProgram(mProgram); }
+		if(bgfx::isValid(mQuadIndices)) { bgfx::destroyIndexBuffer(mQuadIndices); }
+		if(bgfx::isValid(mQuad)) { bgfx::destroyVertexBuffer(mQuad); }
 
-		bgfx::shutdown();
+		mHMD->releaseResources();
+
+		if(mBgfxInitialized) { bgfx::shutdown(); }
 		if(mRenderThread.isRunning()) { mRenderThread.shutdown(); }
 
-		mDesktopEnvironment->shutdown();
+		if(mDesktopEnvironment) { mDesktopEnvironment->shutdown(); }
 
-		SDL_DestroyWindow(mWindow);
+		if(mWindow) { SDL_DestroyWindow(mWindow); }
 		SDL_Quit();
+
+		if(mHMD) { mHMD->shutdown(); }
 	}
 
 	int mainLoop()
 	{
+		unsigned int width, height;
+		mHMD->getViewportSize(width, height);
+
+		float leftImageTransform[16];
+		bx::mtxSRT(leftImageTransform,
+			width, height, 1.f,
+			0.f, 0.f, 0.f,
+			width / 2, height / 2 , 0.f
+		);
+
+		float rightImageTransform[16];
+		bx::mtxSRT(rightImageTransform,
+			width, height, 1.f,
+			0.f, 0.f, 0.f,
+			width / 2 * 3, height / 2, 0.f
+		);
+
 		while(true)
 		{
 			SDL_Event sdlEvent;
@@ -194,17 +302,53 @@ private:
 				}
 			}
 
+			mHMD->update();
+
+			const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
+			bgfx::setViewTransform(
+				RenderPass::LeftEye,
+				leftEye.mViewTransform,
+				leftEye.mViewProjection
+			);
+
+			const RenderData& rightEye = mHMD->getRenderData(Eye::Right);
+			bgfx::setViewTransform(
+				RenderPass::RightEye,
+				rightEye.mViewTransform,
+				rightEye.mViewProjection
+			);
+
 			for(auto&& pair: mWindows)
 			{
 				const WindowData& wndData = pair.second;
+				bgfx::setState(0
+					| BGFX_STATE_RGB_WRITE
+					| BGFX_STATE_ALPHA_WRITE
+					| BGFX_STATE_DEPTH_TEST_LESS
+					| BGFX_STATE_DEPTH_WRITE
+					| BGFX_STATE_MSAA);
 				bgfx::setTransform(wndData.mTransform);
 				bgfx::setVertexBuffer(mQuad);
 				bgfx::setIndexBuffer(mQuadIndices);
 				bgfx::setTexture(0, mTextureUniform, wndData.mInfo.mTexture);
-				bgfx::submit(0, mProgram);
+				bgfx::submit(RenderPass::LeftEye, mProgram, 0, true);
+				bgfx::submit(RenderPass::RightEye, mProgram, 0, false);
 			}
 
-			bgfx::touch(0);
+			bgfx::setTransform(leftImageTransform);
+			bgfx::setVertexBuffer(mQuad);
+			bgfx::setIndexBuffer(mQuadIndices);
+			bgfx::setTexture(0, mTextureUniform, leftEye.mFrameBuffer);
+			bgfx::submit(RenderPass::Mirror, mProgram);
+
+			bgfx::setTransform(rightImageTransform);
+			bgfx::setVertexBuffer(mQuad);
+			bgfx::setIndexBuffer(mQuadIndices);
+			bgfx::setTexture(0, mTextureUniform, rightEye.mFrameBuffer);
+			bgfx::submit(RenderPass::Mirror, mProgram);
+
+			bgfx::touch(RenderPass::LeftEye);
+			bgfx::touch(RenderPass::RightEye);
 			bgfx::frame();
 		}
 	}
@@ -213,8 +357,9 @@ private:
 	{
 		WindowData wndData;
 		wndData.mInfo = event.mInfo;
+		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
 		bx::mtxSRT(wndData.mTransform,
-			event.mInfo.mWidth, event.mInfo.mHeight, 1.0f,
+			event.mInfo.mWidth, event.mInfo.mHeight * yScale, 1.0f,
 			0.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 0.0f
 		);
@@ -231,8 +376,9 @@ private:
 		WindowData& wndData = mWindows.find(event.mWindow)->second;
 
 		wndData.mInfo = event.mInfo;
+		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
 		bx::mtxSRT(wndData.mTransform,
-			event.mInfo.mWidth, event.mInfo.mHeight, 1.0f,
+			event.mInfo.mWidth, event.mInfo.mHeight * yScale, 1.0f,
 			0.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 0.0f
 		);
@@ -245,14 +391,17 @@ private:
 		// Ensure that this thread is registered as the render thread before
 		// bgfx is initialized
 		bgfx::renderFrame();
+		app->mHMD->initRenderer();
 		app->mDesktopEnvironment->initRenderer();
 		app->mRenderThreadReadySem.post();
 
 		while(true)
 		{
+			app->mHMD->beginRender();
 			app->mDesktopEnvironment->beginRender();
 			bgfx::RenderFrame::Enum renderStatus = bgfx::renderFrame();
 			app->mDesktopEnvironment->endRender();
+			app->mHMD->endRender();
 
 			if(renderStatus == bgfx::RenderFrame::Exiting)
 			{
@@ -261,11 +410,14 @@ private:
 		}
 
 		app->mDesktopEnvironment->shutdownRenderer();
+		app->mDesktopEnvironment->shutdownRenderer();
 		return 0;
 	}
 
+	IHMD* mHMD;
 	SDL_Window* mWindow;
-	DesktopEnvironment* mDesktopEnvironment;
+	bool mBgfxInitialized;
+	IDesktopEnvironment* mDesktopEnvironment;
 	bx::Thread mRenderThread;
 	bx::Semaphore mRenderThreadReadySem;
 	bgfx::VertexBufferHandle mQuad;

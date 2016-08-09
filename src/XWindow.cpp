@@ -1,4 +1,4 @@
-#include "DesktopEnvironment.hpp"
+#include "IDesktopEnvironment.hpp"
 #include <unordered_map>
 #include <vector>
 #include <SDL_syswm.h>
@@ -12,6 +12,7 @@
 #include <xcb/composite.h>
 #include <xcb/glx.h>
 #include <xcb/xcb_util.h>
+#include "Registry.hpp"
 #define GLX_GLXEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -55,7 +56,7 @@ const int GLX_PIXMAP_ATTRS[] = {
 
 }
 
-class XWindow: public DesktopEnvironment
+class XWindow: public IDesktopEnvironment
 {
 public:
 	XWindow()
@@ -129,6 +130,11 @@ public:
 	void shutdown()
 	{
 		if(mDisplay != NULL) { XCloseDisplay(mDisplay); }
+	}
+
+	const char* getName() const
+	{
+		return "XWindow";
 	}
 
 	bool pollEvent(WindowEvent& xvrEvent)
@@ -356,6 +362,7 @@ private:
 		wndInfo.mWidth = geom.width;
 		wndInfo.mHeight = geom.height;
 		wndInfo.mTexture = texture;
+		wndInfo.mInvertedY = true;
 		event.mInfo = wndInfo;
 		mWindows.insert(std::make_pair(event.mWindow, wndInfo));
 
@@ -597,12 +604,8 @@ private:
 
 #if BX_PLATFORM_LINUX == 1
 
-static XWindow gXWindowInstance;
-
-DesktopEnvironment* DesktopEnvironment::getInstance()
-{
-	return &gXWindowInstance;
-}
+XWindow gXWindowInstance;
+Registry<IDesktopEnvironment>::Entry gXWindowEntry(&gXWindowInstance);
 
 #endif
 

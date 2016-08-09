@@ -8,5 +8,5 @@ SAMPLER2D(u_texture, 0);
 
 void main()
 {
-	gl_FragColor = texture2D(u_texture, vec2(v_texcoord0.x, -v_texcoord0.y));
+	gl_FragColor = texture2D(u_texture, vec2(v_texcoord0.x, v_texcoord0.y));
 }
