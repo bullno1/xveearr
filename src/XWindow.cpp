@@ -10,8 +10,9 @@
 #include <bgfx/bgfx.h>
 #include <X11/Xlib-xcb.h>
 #include <xcb/composite.h>
-#include <xcb/glx.h>
 #include <xcb/xcb_util.h>
+#include <xcb/res.h>
+#include <xcb/xcb_ewmh.h>
 #include "Registry.hpp"
 #define GLX_GLXEXT_PROTOTYPES
 #include <GL/gl.h>
@@ -107,6 +108,36 @@ public:
 				)
 			);
 		}
+
+		xcb_ewmh_connection_t ewmh;
+		uint8_t initStatus = xcb_ewmh_init_atoms_replies(
+			&ewmh, xcb_ewmh_init_atoms(mXcbConn, &ewmh), NULL
+		);
+		if(!initStatus)
+		{
+			xcb_ewmh_connection_wipe(&ewmh);
+			return false;
+		}
+
+		xcb_window_t supportWindow;
+		uint8_t supportCheckStatus = xcb_ewmh_get_supporting_wm_check_reply(
+			&ewmh,
+			xcb_ewmh_get_supporting_wm_check(
+				&ewmh,
+				xcb_setup_roots_iterator(xcb_get_setup(mXcbConn)).data->root
+			),
+			&supportWindow,
+			NULL
+		);
+		if(!supportCheckStatus)
+		{
+			xcb_ewmh_connection_wipe(&ewmh);
+			return false;
+		}
+		xcb_ewmh_connection_wipe(&ewmh);
+
+		mWindowMgrPid = getPidFromWindow(supportWindow);
+		if(!mWindowMgrPid) { return false; }
 
 		voidCookie = xcb_ungrab_server_checked(mXcbConn);
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
@@ -274,6 +305,53 @@ public:
 	}
 
 private:
+	uint32_t getPidFromWindow(xcb_window_t window)
+	{
+		xcb_res_client_id_spec_t idSpecs;
+		idSpecs.client = window;
+		idSpecs.mask = XCB_RES_CLIENT_ID_MASK_LOCAL_CLIENT_PID;
+		xcb_res_query_client_ids_reply_t* idReply =
+			xcb_res_query_client_ids_reply(
+				mXcbConn, xcb_res_query_client_ids(mXcbConn, 1, &idSpecs), NULL
+			);
+
+		if(!idReply) { return 0; }
+
+		uint32_t pid =
+			*xcb_res_client_id_value_value(
+				(xcb_res_query_client_ids_ids_iterator(idReply).data)
+			);
+		free(idReply);
+
+		return pid;
+	}
+
+	uint32_t getClientPidFromWindow(xcb_window_t window)
+	{
+		uint32_t pid = getPidFromWindow(window);
+
+		if(pid == 0 || pid != mWindowMgrPid) { return pid; }
+
+		xcb_query_tree_reply_t* queryTreeReply = xcb_query_tree_reply(
+			mXcbConn, xcb_query_tree(mXcbConn, window), NULL
+		);
+
+		int numChildren = xcb_query_tree_children_length(queryTreeReply);
+		xcb_window_t* children = xcb_query_tree_children(queryTreeReply);
+		for(int i = 0; i < numChildren; ++i)
+		{
+			uint32_t pid = getClientPidFromWindow(children[i]);
+			if(pid != 0)
+			{
+				free(queryTreeReply);
+				return pid;
+			}
+		}
+
+		free(queryTreeReply);
+		return 0;
+	}
+
 	bool tryDrainEvent(WindowEvent& xvrEvent)
 	{
 		if(mEventIndex < mEvents.size())
@@ -353,6 +431,9 @@ private:
 
 		if(geom.depth == 0) { return false; }
 
+		uint32_t clientPid = getClientPidFromWindow(event.mWindow);
+		if(clientPid == 0) { return false; }
+
 		bgfx::TextureHandle texture =
 			bgfx::createTexture2D(1, 1, 0, bgfx::TextureFormat::RGBA8);
 
@@ -363,6 +444,7 @@ private:
 		wndInfo.mHeight = geom.height;
 		wndInfo.mTexture = texture;
 		wndInfo.mInvertedY = true;
+		wndInfo.mPID = clientPid;
 		event.mInfo = wndInfo;
 		mWindows.insert(std::make_pair(event.mWindow, wndInfo));
 
@@ -593,6 +675,7 @@ private:
 	Display* mRendererDisplay;
 	xcb_connection_t* mXcbConn;
 	xcb_connection_t* mRendererXcbConn;
+	uint32_t mWindowMgrPid;
 	std::unordered_map<WindowId, WindowInfo> mWindows;
 	bx::SpScUnboundedQueue<TextureReq> mTextureReqs;
 	std::vector<TextureReq> mDeferredTextureReqs;
