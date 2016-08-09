@@ -10,12 +10,12 @@
 #include <bx/commandline.h>
 #include "shaders/quad.vsh.h"
 #include "shaders/quad.fsh.h"
-#include "IDesktopEnvironment.hpp"
+#include "IWindowSystem.hpp"
 #include "IHMD.hpp"
 #include "Registry.hpp"
 
 XVR_DECLARE_REGISTRY(xveearr::IHMD)
-XVR_DECLARE_REGISTRY(xveearr::IDesktopEnvironment)
+XVR_DECLARE_REGISTRY(xveearr::IWindowSystem)
 
 namespace xveearr
 {
@@ -83,7 +83,7 @@ public:
 		:mHMD(NULL)
 		,mWindow(NULL)
 		,mBgfxInitialized(false)
-		,mDesktopEnvironment(NULL)
+		,mWindowSystem(NULL)
 	{
 		mQuad = BGFX_INVALID_HANDLE;
 		mQuadIndices = BGFX_INVALID_HANDLE;
@@ -161,23 +161,21 @@ private:
 
 		if(!mWindow) { return false; }
 
-		for(IDesktopEnvironment& de: Registry<IDesktopEnvironment>::all())
+		appCtx.mWindow = mWindow;
+		for(IWindowSystem& winsys: Registry<IWindowSystem>::all())
 		{
-			if(de.init(appCtx))
+			if(winsys.init(appCtx))
 			{
-				mDesktopEnvironment = &de;
+				mWindowSystem = &winsys;
 				break;
 			}
 			else
 			{
-				de.shutdown();
+				winsys.shutdown();
 			}
 		}
 
-		if(!mDesktopEnvironment) { return false; }
-
-		appCtx.mWindow = mWindow;
-		if(!mDesktopEnvironment->init(appCtx)) { return false; }
+		if(!mWindowSystem) { return false; }
 
 		mRenderThread.init(renderThread, this, 0, "Render thread");
 		mRenderThreadReadySem.wait();
@@ -250,7 +248,7 @@ private:
 		if(mBgfxInitialized) { bgfx::shutdown(); }
 		if(mRenderThread.isRunning()) { mRenderThread.shutdown(); }
 
-		if(mDesktopEnvironment) { mDesktopEnvironment->shutdown(); }
+		if(mWindowSystem) { mWindowSystem->shutdown(); }
 
 		if(mWindow) { SDL_DestroyWindow(mWindow); }
 		SDL_Quit();
@@ -286,7 +284,7 @@ private:
 			}
 
 			WindowEvent windowEvent;
-			while(mDesktopEnvironment->pollEvent(windowEvent))
+			while(mWindowSystem->pollEvent(windowEvent))
 			{
 				switch(windowEvent.mType)
 				{
@@ -392,15 +390,15 @@ private:
 		// bgfx is initialized
 		bgfx::renderFrame();
 		app->mHMD->initRenderer();
-		app->mDesktopEnvironment->initRenderer();
+		app->mWindowSystem->initRenderer();
 		app->mRenderThreadReadySem.post();
 
 		while(true)
 		{
 			app->mHMD->beginRender();
-			app->mDesktopEnvironment->beginRender();
+			app->mWindowSystem->beginRender();
 			bgfx::RenderFrame::Enum renderStatus = bgfx::renderFrame();
-			app->mDesktopEnvironment->endRender();
+			app->mWindowSystem->endRender();
 			app->mHMD->endRender();
 
 			if(renderStatus == bgfx::RenderFrame::Exiting)
@@ -409,15 +407,15 @@ private:
 			}
 		}
 
-		app->mDesktopEnvironment->shutdownRenderer();
-		app->mDesktopEnvironment->shutdownRenderer();
+		app->mWindowSystem->shutdownRenderer();
+		app->mWindowSystem->shutdownRenderer();
 		return 0;
 	}
 
 	IHMD* mHMD;
 	SDL_Window* mWindow;
 	bool mBgfxInitialized;
-	IDesktopEnvironment* mDesktopEnvironment;
+	IWindowSystem* mWindowSystem;
 	bx::Thread mRenderThread;
 	bx::Semaphore mRenderThreadReadySem;
 	bgfx::VertexBufferHandle mQuad;

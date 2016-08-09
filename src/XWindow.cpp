@@ -1,4 +1,4 @@
-#include "IDesktopEnvironment.hpp"
+#include "IWindowSystem.hpp"
 #include <unordered_map>
 #include <vector>
 #include <SDL_syswm.h>
@@ -56,7 +56,7 @@ const int GLX_PIXMAP_ATTRS[] = {
 
 }
 
-class XWindow: public IDesktopEnvironment
+class XWindow: public IWindowSystem
 {
 public:
 	XWindow()
@@ -134,7 +134,7 @@ public:
 
 	const char* getName() const
 	{
-		return "XWindow";
+		return "xwindow";
 	}
 
 	bool pollEvent(WindowEvent& xvrEvent)
@@ -605,7 +605,7 @@ private:
 #if BX_PLATFORM_LINUX == 1
 
 XWindow gXWindowInstance;
-Registry<IDesktopEnvironment>::Entry gXWindowEntry(&gXWindowInstance);
+Registry<IWindowSystem>::Entry gXWindowEntry(&gXWindowInstance);
 
 #endif
 

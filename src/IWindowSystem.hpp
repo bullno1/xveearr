@@ -1,5 +1,5 @@
-#ifndef XVEEARR_DESKTOP_ENVIRONMENT_HPP
-#define XVEEARR_DESKTOP_ENVIRONMENT_HPP
+#ifndef XVEEARR_WINDOW_SYSTEM_HPP
+#define XVEEARR_WINDOW_SYSTEM_HPP
 
 #include <cstdint>
 #include <bgfx/bgfx.h>
@@ -39,7 +39,7 @@ struct WindowEvent
 
 typedef void(*EnumWindowFn)(WindowId id, const WindowInfo& info, void* context);
 
-class IDesktopEnvironment: public IComponent, public IRenderHook
+class IWindowSystem: public IComponent, public IRenderHook
 {
 public:
 	virtual bool pollEvent(WindowEvent& event) = 0;
