@@ -32,6 +32,7 @@ public:
 	virtual void prepareResources() = 0;
 	virtual void releaseResources() = 0;
 	virtual void getViewportSize(unsigned int& widht, unsigned int& height) = 0;
+	virtual void getHeadTransform(float* heaadTransform) = 0;
 	virtual void update() = 0;
 	virtual const RenderData& getRenderData(Eye::Enum eye) = 0;
 };

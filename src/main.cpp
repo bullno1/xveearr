@@ -355,12 +355,18 @@ private:
 	{
 		WindowData wndData;
 		wndData.mInfo = event.mInfo;
+
+		float relTransform[16];
 		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
-		bx::mtxSRT(wndData.mTransform,
+		bx::mtxSRT(relTransform,
 			event.mInfo.mWidth, event.mInfo.mHeight * yScale, 1.0f,
 			0.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, 0.0f
+			0.0f, 0.0f, -600.0f
 		);
+		float headTransform[16];
+		mHMD->getHeadTransform(headTransform);
+		bx::mtxMul(wndData.mTransform, relTransform, headTransform);
+
 		mWindows.insert(std::make_pair(event.mWindow, wndData));
 	}
 
@@ -375,11 +381,8 @@ private:
 
 		wndData.mInfo = event.mInfo;
 		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
-		bx::mtxSRT(wndData.mTransform,
-			event.mInfo.mWidth, event.mInfo.mHeight * yScale, 1.0f,
-			0.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, 0.0f
-		);
+		wndData.mTransform[0] = event.mInfo.mWidth;
+		wndData.mTransform[5] = event.mInfo.mHeight * yScale;
 	}
 
 	static int32_t renderThread(void* userData)

@@ -81,6 +81,11 @@ public:
 		height = gViewportHeight;
 	}
 
+	void getHeadTransform(float* headTransform)
+	{
+		memcpy(headTransform, mHeadTransform, sizeof(mHeadTransform));
+	}
+
 	const char* getName() const
 	{
 		return "null";
