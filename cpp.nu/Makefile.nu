@@ -10,7 +10,7 @@ LINK_FLAGS ?=
 # A phony rule to register target as an executable
 exe:%: << BUILD_DIR stable ! live
 	exe="${BUILD_DIR}/${m}.exe"
-	if [ ! "${stable}" == "1" ] || [ ! -f "${exe}" ]; then
+	if [ ! "${stable}" = "1" ] || [ ! -f "${exe}" ]; then
 		${NUMAKE} --depend "${exe}"
 	fi
 	mkdir -p $(dirname ${m})
@@ -19,7 +19,7 @@ exe:%: << BUILD_DIR stable ! live
 # A phony rule to register target as a static library
 static-lib:%: << BUILD_DIR stable ! live
 	lib="${BUILD_DIR}/${m}.lib"
-	if [ ! "${stable}" == "1" ] || [ ! -f "${lib}" ]; then
+	if [ ! "${stable}" = "1" ] || [ ! -f "${lib}" ]; then
 		${NUMAKE} --depend "${lib}"
 	fi
 	mkdir -p $(dirname ${m})
