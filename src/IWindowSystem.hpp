@@ -10,12 +10,13 @@ namespace xveearr
 {
 
 typedef uintptr_t WindowId;
+typedef uintptr_t PID;
 
 struct WindowInfo
 {
 	bgfx::TextureHandle mTexture;
 	bool mInvertedY;
-	uintptr_t mPID;
+	PID mPID;
 	unsigned int mX;
 	unsigned int mY;
 	unsigned int mWidth;
