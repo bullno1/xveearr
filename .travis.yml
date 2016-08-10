@@ -4,7 +4,7 @@ compiler:
   - gcc
   - clang
 install:
-  - sudo apt-get install -y fglrx libx11-xcb-dev libxcb-composite0-dev libxcb-util0-dev libxcb-res0-dev libxcb-ewmh-dev libxcb-keysyms1-dev libsdl2-dev
+  - sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libx11-xcb-dev libxcb-composite0-dev libxcb-util0-dev libxcb-res0-dev libxcb-ewmh-dev libxcb-keysyms1-dev libsdl2-dev
 script:
   - ./numake
   - bin/xveearr --version
