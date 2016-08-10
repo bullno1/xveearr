@@ -68,13 +68,17 @@ public:
 
 	bool init(const ApplicationContext& appCtx)
 	{
-		mWindow = appCtx.mWindow;
-
 		mDisplay = XOpenDisplay(NULL);
 		if(mDisplay == NULL) { return false; }
 
 		mXcbConn = XGetXCBConnection(mDisplay);
 		XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
+
+		SDL_SysWMinfo wmi;
+		SDL_GetVersion(&wmi.version);
+		SDL_GetWindowWMInfo(appCtx.mWindow, &wmi);
+		mRendererDisplay = wmi.info.x11.display;
+		mPID = getClientPidFromWindow(wmi.info.x11.window);
 
 		xcb_generic_error_t *error;
 		xcb_void_cookie_t voidCookie;
@@ -245,11 +249,6 @@ public:
 
 	void initRenderer()
 	{
-		SDL_SysWMinfo wmi;
-		SDL_GetVersion(&wmi.version);
-		SDL_GetWindowWMInfo(mWindow, &wmi);
-
-		mRendererDisplay = wmi.info.x11.display;
 		mRendererXcbConn = XGetXCBConnection(mRendererDisplay);
 
 		xcb_grab_server(mRendererXcbConn);
@@ -432,7 +431,7 @@ private:
 		if(geom.depth == 0) { return false; }
 
 		uint32_t clientPid = getClientPidFromWindow(event.mWindow);
-		if(clientPid == 0) { return false; }
+		if(clientPid == 0 || clientPid == mPID) { return false; }
 
 		bgfx::TextureHandle texture =
 			bgfx::createTexture2D(1, 1, 0, bgfx::TextureFormat::RGBA8);
@@ -671,10 +670,10 @@ private:
 	}
 
 	Display* mDisplay;
-	SDL_Window* mWindow;
 	Display* mRendererDisplay;
 	xcb_connection_t* mXcbConn;
 	xcb_connection_t* mRendererXcbConn;
+	PID mPID;
 	uint32_t mWindowMgrPid;
 	std::unordered_map<WindowId, WindowInfo> mWindows;
 	bx::SpScUnboundedQueue<TextureReq> mTextureReqs;
