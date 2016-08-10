@@ -156,28 +156,30 @@ public:
 		return mTmpWindows.size();
 	}
 
-	void getGroupTransform(PID pid, float* result)
+	bool getGroupTransform(PID pid, float* result)
 	{
 		auto itr = mWindowGroups.find(pid);
-		if(itr == mWindowGroups.end()) { return; }
+		if(itr == mWindowGroups.end()) { return false; }
 
 		memcpy(result, itr->second.mTransform, sizeof(itr->second.mTransform));
+		return true;
 	}
 
-	void setGroupTransform(PID pid, const float* mtx)
+	bool setGroupTransform(PID pid, const float* mtx)
 	{
 		auto itr = mWindowGroups.find(pid);
-		if(itr == mWindowGroups.end()) { return; }
+		if(itr == mWindowGroups.end()) { return false; }
 
 		memcpy(itr->second.mTransform, mtx, sizeof(itr->second.mTransform));
+		return true;
 	}
 
-	void transformPoint(
+	bool transformPoint(
 		PID pid, unsigned int x, unsigned int y, float* out
 	)
 	{
 		auto itr = mWindowGroups.find(pid);
-		if(itr == mWindowGroups.end()) { return; }
+		if(itr == mWindowGroups.end()) { return false; }
 
 		float pos[] = {
 			(float)x - (float)mHalfScreenWidth,
@@ -190,11 +192,26 @@ public:
 		out[0] = result[0];
 		out[1] = result[1];
 		out[2] = result[2];
+
+		return true;
 	}
 
-	void focusWindow(WindowId window)
+	bool setFocusedWindow(WindowId window)
 	{
-		mFocusedWindow = window;
+		if(window == 0 || mWindows.find(window) != mWindows.end())
+		{
+			mFocusedWindow = window;
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	WindowId getFocusedWindow()
+	{
+		return mFocusedWindow;
 	}
 
 	const WindowInfo* getWindowInfo(WindowId window)
@@ -569,6 +586,8 @@ private:
 	{
 		WindowInfo wndInfo = mWindows[event.mWindow];
 		mWindows.erase(event.mWindow);
+
+		if(event.mWindow == mFocusedWindow) { mFocusedWindow = 0; }
 
 		WindowGroup& group = findWindowGroup(wndInfo.mPID);
 		group.mMembers.remove(event.mWindow);

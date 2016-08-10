@@ -43,7 +43,7 @@ public:
 		WindowId window = utils::pickWindow(
 			mWindowManager, rayOrigin, rayDirection
 		);
-		mWindowManager->focusWindow(window);
+		mWindowManager->setFocusedWindow(window);
 	}
 
 private:
