@@ -58,14 +58,8 @@ public:
 
 	void prepareResources()
 	{
-		mRenderData[Eye::Left].mFrameBuffer = bgfx::createFrameBuffer(
-			gViewportWidth, gViewportHeight,
-			bgfx::TextureFormat::RGBA8
-		);
-		mRenderData[Eye::Right].mFrameBuffer = bgfx::createFrameBuffer(
-			gViewportWidth, gViewportHeight,
-			bgfx::TextureFormat::RGBA8
-		);
+		mRenderData[Eye::Left].mFrameBuffer = createEyeFB();
+		mRenderData[Eye::Right].mFrameBuffer = createEyeFB();
 	}
 
 	void releaseResources()
@@ -154,6 +148,24 @@ public:
 	}
 
 private:
+	bgfx::FrameBufferHandle createEyeFB()
+	{
+		bgfx::TextureHandle textures[] = {
+			bgfx::createTexture2D(
+				gViewportWidth, gViewportHeight, 1,
+				bgfx::TextureFormat::BGRA8,
+				BGFX_TEXTURE_RT|BGFX_TEXTURE_U_CLAMP|BGFX_TEXTURE_V_CLAMP
+			),
+			bgfx::createTexture2D(
+				gViewportWidth, gViewportHeight, 1,
+				bgfx::TextureFormat::D16,
+				BGFX_TEXTURE_RT_WRITE_ONLY
+			)
+		};
+
+		return bgfx::createFrameBuffer(BX_COUNTOF(textures), textures, true);
+	}
+
 	float mHeadTransform[16];
 	RenderData mRenderData[Eye::Count];
 };
