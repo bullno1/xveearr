@@ -1,5 +1,7 @@
 #include <unordered_map>
 #include <list>
+#include <vector>
+#include <algorithm>
 #include <SDL_syswm.h>
 #include <SDL.h>
 #include <bgfx/bgfxplatform.h>
@@ -11,6 +13,7 @@
 #include <bx/commandline.h>
 #include "shaders/quad.vsh.h"
 #include "shaders/quad.fsh.h"
+#include "IWindowManager.hpp"
 #include "Registry.hpp"
 #include "IWindowSystem.hpp"
 #include "IHMD.hpp"
@@ -79,7 +82,7 @@ struct WindowGroup
 
 }
 
-class Application
+class Application: IWindowManager
 {
 public:
 	Application()
@@ -119,6 +122,89 @@ public:
 		return exitCode;
 	}
 
+	unsigned int getWindowGroups(const PID** pids)
+	{
+		*pids = mPIDs.data();
+		return mPIDs.size();
+	}
+
+	unsigned int getWindows(PID pid, const WindowId** wids)
+	{
+		mTmpWindows.clear();
+
+		if(pid)
+		{
+			auto itr = mWindowGroups.find(pid);
+			if(itr != mWindowGroups.end())
+			{
+				std::copy(
+					itr->second.mMembers.begin(),
+					itr->second.mMembers.end(),
+					std::back_inserter(mTmpWindows)
+				);
+			}
+		}
+		else
+		{
+			for(auto&& pair: mWindows)
+			{
+				mTmpWindows.push_back(pair.first);
+			}
+		}
+
+		*wids = mTmpWindows.data();
+		return mTmpWindows.size();
+	}
+
+	void getGroupTransform(PID pid, float* result)
+	{
+		auto itr = mWindowGroups.find(pid);
+		if(itr == mWindowGroups.end()) { return; }
+
+		memcpy(result, itr->second.mTransform, sizeof(itr->second.mTransform));
+	}
+
+	void setGroupTransform(PID pid, const float* mtx)
+	{
+		auto itr = mWindowGroups.find(pid);
+		if(itr == mWindowGroups.end()) { return; }
+
+		memcpy(itr->second.mTransform, mtx, sizeof(itr->second.mTransform));
+	}
+
+	void transformPoint(
+		PID pid, unsigned int x, unsigned int y, float* out
+	)
+	{
+		auto itr = mWindowGroups.find(pid);
+		if(itr == mWindowGroups.end()) { return; }
+
+		float pos[] = {
+			(float)x - (float)mHalfScreenWidth,
+			-((float)y - (float)mHalfScreenHeight),
+			0.f,
+			1.f
+		};
+		float result[4];
+		bx::vec4MulMtx(result, pos, itr->second.mTransform);
+		out[0] = result[0];
+		out[1] = result[1];
+		out[2] = result[2];
+	}
+
+	void focusWindow(WindowId window)
+	{
+		mFocusedWindow = window;
+	}
+
+	const WindowInfo* getWindowInfo(WindowId window)
+	{
+		auto itr = mWindows.find(window);
+		if(itr == mWindows.end()) { return NULL; }
+
+		return &itr->second;
+	}
+
 private:
 	int showHelp()
 	{
@@ -151,6 +237,14 @@ private:
 		for(IHMD& hmd: Registry<IHMD>::all())
 		{
 			printf("* %s\n", hmd.getName());
+		}
+		printf("\n");
+
+		printf("Supported controllers:\n");
+		printf("\n");
+		for(IController& controller: Registry<IController>::all())
+		{
+			printf("* %s\n", controller.getName());
 		}
 
 		return EXIT_SUCCESS;
@@ -213,6 +307,22 @@ private:
 		}
 
 		if(!mWindowSystem) { return false; }
+
+		ControllerCfg controllerCfg;
+		controllerCfg.mWindow = mWindow;
+		controllerCfg.mWindowManager = this;
+		controllerCfg.mHMD = mHMD;
+		for(IController& controller: Registry<IController>::all())
+		{
+			if(controller.init(controllerCfg))
+			{
+				mControllers.push_back(&controller);
+			}
+			else
+			{
+				controller.shutdown();
+			}
+		}
 
 		mRenderThread.init(renderThread, this, 0, "Render thread");
 		mRenderThreadReadySem.wait();
@@ -295,6 +405,11 @@ private:
 		if(mBgfxInitialized) { bgfx::shutdown(); }
 		if(mRenderThread.isRunning()) { mRenderThread.shutdown(); }
 
+		for(IController* controller: mControllers)
+		{
+			controller->shutdown();
+		}
+
 		if(mWindowSystem) { mWindowSystem->shutdown(); }
 
 		if(mWindow) { SDL_DestroyWindow(mWindow); }
@@ -342,6 +457,11 @@ private:
 			}
 
 			mHMD->update();
+
+			for(IController* controller: mControllers)
+			{
+				controller->update();
+			}
 
 			const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
 			bgfx::setViewTransform(
@@ -410,6 +530,9 @@ private:
 			);
 			bgfx::submit(RenderPass::Mirror, mProgram);
 
+			bgfx::dbgTextClear();
+			bgfx::dbgTextPrintf(0, 1, 0x4f, "Focused window: %zd", mFocusedWindow);
+
 			bgfx::frame();
 		}
 	}
@@ -452,6 +575,8 @@ private:
 		if(group.mMembers.empty())
 		{
 			mWindowGroups.erase(wndInfo.mPID);
+			auto itr = std::find(mPIDs.begin(), mPIDs.end(), wndInfo.mPID);
+			if(itr != mPIDs.end()) { mPIDs.erase(itr); }
 		}
 	}
 
@@ -473,6 +598,7 @@ private:
 			bx::mtxMul(group.mTransform, relTransform, headTransform);
 
 			auto itr = mWindowGroups.insert(std::make_pair(pid, group));
+			mPIDs.push_back(pid);
 
 			return itr.first->second;
 		}
@@ -525,8 +651,12 @@ private:
 	bgfx::ProgramHandle mProgram;
 	bgfx::UniformHandle mTextureUniform;
 	bgfx::UniformHandle mQuadInfoUniform;
+	WindowId mFocusedWindow;
 	std::unordered_map<WindowId, WindowInfo> mWindows;
-	std::unordered_map<uintptr_t, WindowGroup> mWindowGroups;
+	std::unordered_map<PID, WindowGroup> mWindowGroups;
+	std::vector<IController*> mControllers;
+	std::vector<PID> mPIDs;
+	std::vector<WindowId> mTmpWindows;
 };
 
 }
