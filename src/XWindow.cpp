@@ -14,7 +14,6 @@
 #include <xcb/res.h>
 #include <xcb/xcb_ewmh.h>
 #include "Registry.hpp"
-#define GLX_GLXEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glext.h>
@@ -68,6 +67,17 @@ public:
 
 	bool init(const WindowSystemCfg& cfg)
 	{
+		mglXBindTexImageEXT = (PFNGLXBINDTEXIMAGEEXTPROC)glXGetProcAddress(
+			(const GLubyte*)"glXBindTexImageEXT"
+		);
+		mglXReleaseTexImageEXT = (PFNGLXRELEASETEXIMAGEEXTPROC)glXGetProcAddress(
+			(const GLubyte*)"glXReleaseTexImageEXT"
+		);
+		if(!mglXBindTexImageEXT || ! mglXReleaseTexImageEXT)
+		{
+			return false;
+		}
+
 		mDisplay = XOpenDisplay(NULL);
 		if(mDisplay == NULL) { return false; }
 
@@ -533,7 +543,7 @@ private:
 		GLXPixmap glxPixmap = glXCreatePixmap(
 			mRendererDisplay, fbConfig, compositePixmap, GLX_PIXMAP_ATTRS
 		);
-		glXBindTexImageEXT(
+		mglXBindTexImageEXT(
 			mRendererDisplay, glxPixmap, GLX_FRONT_LEFT_EXT, NULL
 		);
 
@@ -554,7 +564,7 @@ private:
 
 		TextureInfo& texInfo = itr->second;
 		glBindTexture(GL_TEXTURE_2D, texInfo.mGLHandle);
-		glXReleaseTexImageEXT(
+		mglXReleaseTexImageEXT(
 			mRendererDisplay, texInfo.mGLXPixmap, GLX_FRONT_LEFT_EXT
 		);
 		glXDestroyPixmap(mRendererDisplay, texInfo.mGLXPixmap);
@@ -578,7 +588,7 @@ private:
 		}
 
 		glBindTexture(GL_TEXTURE_2D, texInfo.mGLHandle);
-		glXReleaseTexImageEXT(
+		mglXReleaseTexImageEXT(
 			mRendererDisplay, texInfo.mGLXPixmap,GLX_FRONT_LEFT_EXT
 		);
 		glXDestroyPixmap(mRendererDisplay, texInfo.mGLXPixmap);
@@ -587,7 +597,7 @@ private:
 		GLXPixmap glxPixmap = glXCreatePixmap(
 			mRendererDisplay, fbConfig, compositePixmap, GLX_PIXMAP_ATTRS
 		);
-		glXBindTexImageEXT(
+		mglXBindTexImageEXT(
 			mRendererDisplay, glxPixmap, GLX_FRONT_LEFT_EXT, NULL
 		);
 
@@ -682,6 +692,8 @@ private:
 	unsigned int mEventIndex;
 	std::vector<WindowEvent> mEvents;
 	std::vector<WindowEvent> mTmpEventBuff;
+	PFNGLXBINDTEXIMAGEEXTPROC mglXBindTexImageEXT;
+	PFNGLXRELEASETEXIMAGEEXTPROC mglXReleaseTexImageEXT;
 };
 
 #if BX_PLATFORM_LINUX == 1
