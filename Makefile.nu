@@ -1,4 +1,4 @@
-CPP_FLAGS ?= -g -Wall -Wextra -Werror -pedantic -Wno-switch -pthread -O2
+CPP_FLAGS ?= -g -Wall -Wextra -Werror -std=c++11 -pedantic -Wno-switch -pthread -O2
 
 -import cpp.nu
 -import bgfx.nu

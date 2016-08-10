@@ -1,0 +1,11 @@
+---
+language: cpp
+compiler:
+  - gcc
+  - clang
+install:
+  - apt-get install -y fglrx libx11-xcb-dev libxcb-composite0-dev libxcb-util0-dev libxcb-res0-dev libxcb-ewmh-dev libxcb-keysyms1-dev libsdl2-dev
+script:
+  - ./numake
+sudo: required
+dist: trusty
