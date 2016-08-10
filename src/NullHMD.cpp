@@ -158,7 +158,7 @@ private:
 			),
 			bgfx::createTexture2D(
 				gViewportWidth, gViewportHeight, 1,
-				bgfx::TextureFormat::D16,
+				bgfx::TextureFormat::D16F,
 				BGFX_TEXTURE_RT_WRITE_ONLY
 			)
 		};
