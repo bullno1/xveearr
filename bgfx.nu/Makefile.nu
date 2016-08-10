@@ -28,7 +28,7 @@ bin/shaderc: << CPP_FLAGS
 	"
 	${NUMAKE} exe:$@ \
 		sources="${SOURCES}" \
-		cpp_flags="${FLAGS}" \
+		cpp_flags="-std=c++11 ${FLAGS}" \
 		c_flags="${FLAGS}" \
 		stable=1
 
