@@ -36,8 +36,8 @@ $BUILD_DIR/%.exe: << sources BUILD_DIR linker LINKER link_flags LINK_FLAGS libs
 	)
 	${NUMAKE} --depend ${objs} ${libs}
 	mkdir -p $(dirname $@)
-	echo ${linker:-${LINKER}} -o $@ ${link_flags:-${LINK_FLAGS}} ${objs} ${libs}
-	${linker:-${LINKER}} -o $@ ${link_flags:-${LINK_FLAGS}} ${objs} ${libs}
+	echo ${linker:-${LINKER}} ${objs} ${libs} -o $@ ${link_flags:-${LINK_FLAGS}}
+	${linker:-${LINKER}} ${objs} ${libs} -o $@ ${link_flags:-${LINK_FLAGS}}
 
 $BUILD_DIR/%.lib: << sources BUILD_DIR ar AR
 	objs=$(
