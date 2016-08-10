@@ -1,9 +1,17 @@
 #ifndef XVEEARR_REGISTRY_HPP
 #define XVEEARR_REGISTRY_HPP
 
-#define XVR_DECLARE_REGISTRY(T) \
+#define XVR_DEFINE_REGISTRY(T) \
 	namespace xveearr { \
 		template<> Registry< T >::Entry* Registry< T >::sEntry = NULL; \
+	}
+
+#define XVR_REGISTER(REGISTRY, CLASS) \
+	namespace { \
+		CLASS g##CLASS##Instance; \
+		::xveearr::Registry< REGISTRY >::Entry g##CLASS##Entry(\
+			&g##CLASS##Instance \
+		); \
 	}
 
 namespace xveearr

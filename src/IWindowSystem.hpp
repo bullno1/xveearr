@@ -6,6 +6,8 @@
 #include "IComponent.hpp"
 #include "IRenderHook.hpp"
 
+struct SDL_Window;
+
 namespace xveearr
 {
 
@@ -39,9 +41,12 @@ struct WindowEvent
 	WindowInfo mInfo;
 };
 
-typedef void(*EnumWindowFn)(WindowId id, const WindowInfo& info, void* context);
+struct WindowSystemCfg
+{
+	SDL_Window* mWindow;
+};
 
-class IWindowSystem: public IComponent, public IRenderHook
+class IWindowSystem: public IComponent<WindowSystemCfg>, public IRenderHook
 {
 public:
 	virtual bool pollEvent(WindowEvent& event) = 0;

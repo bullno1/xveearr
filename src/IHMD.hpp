@@ -26,7 +26,7 @@ struct Eye
 	};
 };
 
-class IHMD: public IComponent, public IRenderHook
+class IHMD: public IComponent<void>, public IRenderHook
 {
 public:
 	virtual void prepareResources() = 0;

@@ -11,12 +11,14 @@
 #include <bx/commandline.h>
 #include "shaders/quad.vsh.h"
 #include "shaders/quad.fsh.h"
+#include "Registry.hpp"
 #include "IWindowSystem.hpp"
 #include "IHMD.hpp"
-#include "Registry.hpp"
+#include "IController.hpp"
 
-XVR_DECLARE_REGISTRY(xveearr::IHMD)
-XVR_DECLARE_REGISTRY(xveearr::IWindowSystem)
+XVR_DEFINE_REGISTRY(xveearr::IHMD)
+XVR_DEFINE_REGISTRY(xveearr::IWindowSystem)
+XVR_DEFINE_REGISTRY(xveearr::IController)
 
 namespace xveearr
 {
@@ -173,11 +175,7 @@ private:
 			return false;
 		}
 
-		ApplicationContext appCtx;
-		appCtx.mArgc = argc;
-		appCtx.mArgv = argv;
-
-		if(!mHMD->init(appCtx)) { return false; }
+		if(!mHMD->init()) { return false; }
 
 		if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { return false; }
 
@@ -199,10 +197,11 @@ private:
 
 		if(!mWindow) { return false; }
 
-		appCtx.mWindow = mWindow;
+		WindowSystemCfg wndSysCfg;
+		wndSysCfg.mWindow = mWindow;
 		for(IWindowSystem& winsys: Registry<IWindowSystem>::all())
 		{
-			if(winsys.init(appCtx))
+			if(winsys.init(wndSysCfg))
 			{
 				mWindowSystem = &winsys;
 				break;

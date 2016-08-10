@@ -66,7 +66,7 @@ public:
 		,mEventIndex(0)
 	{}
 
-	bool init(const ApplicationContext& appCtx)
+	bool init(const WindowSystemCfg& cfg)
 	{
 		mDisplay = XOpenDisplay(NULL);
 		if(mDisplay == NULL) { return false; }
@@ -76,7 +76,7 @@ public:
 
 		SDL_SysWMinfo wmi;
 		SDL_GetVersion(&wmi.version);
-		SDL_GetWindowWMInfo(appCtx.mWindow, &wmi);
+		SDL_GetWindowWMInfo(cfg.mWindow, &wmi);
 		mRendererDisplay = wmi.info.x11.display;
 		mPID = getClientPidFromWindow(wmi.info.x11.window);
 
@@ -686,8 +686,7 @@ private:
 
 #if BX_PLATFORM_LINUX == 1
 
-XWindow gXWindowInstance;
-Registry<IWindowSystem>::Entry gXWindowEntry(&gXWindowInstance);
+XVR_REGISTER(IWindowSystem, XWindow)
 
 #endif
 

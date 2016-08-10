@@ -1,24 +1,28 @@
 #ifndef XVEEEARR_COMPONENT_HPP
 #define XVEEEARR_COMPONENT_HPP
 
-struct SDL_Window;
-
 namespace xveearr
 {
 
-struct ApplicationContext
-{
-	int mArgc;
-	const char** mArgv;
-	SDL_Window* mWindow;
-};
-
-class IComponent
+class IComponentBase
 {
 public:
-	virtual bool init(const ApplicationContext& appCtx) = 0;
 	virtual void shutdown() = 0;
 	virtual const char* getName() const = 0;
+};
+
+template<typename T>
+class IComponent: public IComponentBase
+{
+public:
+	virtual bool init(const T& initParam) = 0;
+};
+
+template<>
+class IComponent<void>: public IComponentBase
+{
+public:
+	virtual bool init() = 0;
 };
 
 }

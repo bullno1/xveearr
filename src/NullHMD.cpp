@@ -26,7 +26,7 @@ public:
 		mRenderData[Eye::Right].mFrameBuffer = BGFX_INVALID_HANDLE;
 	}
 
-	bool init(const ApplicationContext&)
+	bool init()
 	{
 		bx::mtxSRT(mHeadTransform,
 			1.f, 1.f, 1.f,
@@ -175,7 +175,6 @@ private:
 	RenderData mRenderData[Eye::Count];
 };
 
-NullHMD gNullHMDInstance;
-Registry<IHMD>::Entry gFakeHMDEntry(&gNullHMDInstance);
+XVR_REGISTER(IHMD, NullHMD)
 
 }
