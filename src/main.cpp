@@ -98,6 +98,10 @@ public:
 		{
 			return showHelp();
 		}
+		else if(cmdLine.hasArg('v', "version"))
+		{
+			return showVersion();
+		}
 
 		if(!init(argc, argv))
 		{
@@ -115,9 +119,35 @@ private:
 	int showHelp()
 	{
 		printf("Usage: xveearr --help\n");
+		printf("       xveearr --version\n");
 		printf("       xveearr [ --hmd <HMD> ]\n");
 		printf("\n");
-		printf("    -h, -hmd <HMD>                   HMD driver (openvr, null)\n");
+		printf("    --help                  Print this message\n");
+		printf("    -v, --version           Show version info\n");
+		printf("    -h, --hmd <HMD>         Choose HMD driver\n");
+
+		return EXIT_SUCCESS;
+	}
+
+	int showVersion()
+	{
+		printf("xveearr version\n");
+		printf("\n");
+
+		printf("Supported window systems:\n");
+		printf("\n");
+		for(IWindowSystem& winsys: Registry<IWindowSystem>::all())
+		{
+			printf("* %s\n", winsys.getName());
+		}
+		printf("\n");
+
+		printf("Supported hmd drivers:\n");
+		printf("\n");
+		for(IHMD& hmd: Registry<IHMD>::all())
+		{
+			printf("* %s\n", hmd.getName());
+		}
 
 		return EXIT_SUCCESS;
 	}
