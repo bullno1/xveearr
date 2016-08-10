@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <list>
 #include <SDL_syswm.h>
 #include <SDL.h>
 #include <bgfx/bgfxplatform.h>
@@ -68,6 +69,11 @@ struct RenderPass
 
 static const uint32_t gClearColor = 0x303030ff;
 
+struct WindowGroup
+{
+	std::list<WindowId> mMembers;
+};
+
 struct WindowData
 {
 	WindowInfo mInfo;
@@ -89,6 +95,7 @@ public:
 		mQuadIndices = BGFX_INVALID_HANDLE;
 		mProgram = BGFX_INVALID_HANDLE;
 		mTextureUniform = BGFX_INVALID_HANDLE;
+		mQuadInfoUniform = BGFX_INVALID_HANDLE;
 	}
 
 	int run(int argc, const char* argv[])
@@ -262,12 +269,16 @@ private:
 		mTextureUniform = bgfx::createUniform(
 			"u_texture", bgfx::UniformType::Int1
 		);
+		mQuadInfoUniform = bgfx::createUniform(
+			"u_quadInfo", bgfx::UniformType::Vec4
+		);
 
 		return true;
 	}
 
 	void shutdown()
 	{
+		if(bgfx::isValid(mQuadInfoUniform)) { bgfx::destroyUniform(mQuadInfoUniform); }
 		if(bgfx::isValid(mTextureUniform)) { bgfx::destroyUniform(mTextureUniform); }
 		if(bgfx::isValid(mProgram)) { bgfx::destroyProgram(mProgram); }
 		if(bgfx::isValid(mQuadIndices)) { bgfx::destroyIndexBuffer(mQuadIndices); }
@@ -288,22 +299,16 @@ private:
 
 	int mainLoop()
 	{
-		unsigned int width, height;
-		mHMD->getViewportSize(width, height);
+		unsigned int viewPortWidth, viewPortHeight;
+		mHMD->getViewportSize(viewPortWidth, viewPortHeight);
 
 		float leftImageTransform[16];
-		bx::mtxSRT(leftImageTransform,
-			width, height, 1.f,
-			0.f, 0.f, 0.f,
-			width / 2, height / 2 , 0.f
-		);
+		bx::mtxTranslate(leftImageTransform,
+			viewPortWidth / 2, viewPortHeight / 2, 0.f);
 
 		float rightImageTransform[16];
-		bx::mtxSRT(rightImageTransform,
-			width, height, 1.f,
-			0.f, 0.f, 0.f,
-			width / 2 * 3, height / 2, 0.f
-		);
+		bx::mtxTranslate(rightImageTransform,
+			viewPortWidth / 2 * 3, viewPortHeight / 2, 0.f);
 
 		while(true)
 		{
@@ -346,6 +351,8 @@ private:
 				rightEye.mViewProjection
 			);
 
+			bgfx::touch(RenderPass::LeftEye);
+			bgfx::touch(RenderPass::RightEye);
 			for(auto&& pair: mWindows)
 			{
 				const WindowData& wndData = pair.second;
@@ -355,30 +362,54 @@ private:
 					| BGFX_STATE_DEPTH_TEST_LESS
 					| BGFX_STATE_DEPTH_WRITE
 					| BGFX_STATE_MSAA);
-				bgfx::setTransform(wndData.mTransform);
-				bgfx::setVertexBuffer(mQuad);
-				bgfx::setIndexBuffer(mQuadIndices);
-				bgfx::setTexture(0, mTextureUniform, wndData.mInfo.mTexture);
+
+				loadTexturedQuad(
+					wndData.mTransform,
+					wndData.mInfo.mTexture,
+					wndData.mInfo.mWidth, wndData.mInfo.mHeight,
+					wndData.mInfo.mInvertedY
+				);
 				bgfx::submit(RenderPass::LeftEye, mProgram, 0, true);
 				bgfx::submit(RenderPass::RightEye, mProgram, 0, false);
 			}
 
-			bgfx::setTransform(leftImageTransform);
-			bgfx::setVertexBuffer(mQuad);
-			bgfx::setIndexBuffer(mQuadIndices);
-			bgfx::setTexture(0, mTextureUniform, leftEye.mFrameBuffer);
+			loadTexturedQuad(
+				leftImageTransform,
+				leftEye.mFrameBuffer,
+				viewPortWidth, viewPortHeight, false
+			);
 			bgfx::submit(RenderPass::Mirror, mProgram);
 
-			bgfx::setTransform(rightImageTransform);
-			bgfx::setVertexBuffer(mQuad);
-			bgfx::setIndexBuffer(mQuadIndices);
-			bgfx::setTexture(0, mTextureUniform, rightEye.mFrameBuffer);
+			loadTexturedQuad(
+				rightImageTransform,
+				rightEye.mFrameBuffer,
+				viewPortWidth, viewPortHeight, false
+			);
 			bgfx::submit(RenderPass::Mirror, mProgram);
 
-			bgfx::touch(RenderPass::LeftEye);
-			bgfx::touch(RenderPass::RightEye);
 			bgfx::frame();
 		}
+	}
+
+	template<typename T>
+	void loadTexturedQuad(
+		const float* transform,
+		T texture,
+		unsigned int width, unsigned int height,
+		bool invertedY
+	)
+	{
+		bgfx::setTransform(transform);
+		bgfx::setVertexBuffer(mQuad);
+		bgfx::setIndexBuffer(mQuadIndices);
+		bgfx::setTexture(0, mTextureUniform, texture);
+		float quadInfo[] = {
+			(float)width,
+			(float)height,
+			invertedY ? -1.f : 1.f,
+			0.f
+		};
+		bgfx::setUniform(mQuadInfoUniform, quadInfo, 1);
 	}
 
 	void onWindowAdded(const WindowEvent& event)
@@ -386,33 +417,73 @@ private:
 		WindowData wndData;
 		wndData.mInfo = event.mInfo;
 
-		float relTransform[16];
-		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
-		bx::mtxSRT(relTransform,
-			event.mInfo.mWidth, event.mInfo.mHeight * yScale, 1.0f,
-			0.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, -600.0f
-		);
-		float headTransform[16];
-		mHMD->getHeadTransform(headTransform);
-		bx::mtxMul(wndData.mTransform, relTransform, headTransform);
+		WindowGroup& group = findWindowGroup(event.mInfo.mPID);
+		if(group.mMembers.empty())
+		{
+			float relTransform[16];
+			bx::mtxTranslate(relTransform, 0.f, 0.f, -600.f);
+			float headTransform[16];
+			mHMD->getHeadTransform(headTransform);
+			bx::mtxMul(wndData.mTransform, relTransform, headTransform);
+		}
+		else
+		{
+			WindowData& firstWindow = mWindows[group.mMembers.front()];
+			float firstWinCenterX =
+				(float)firstWindow.mInfo.mX + (float)firstWindow.mInfo.mWidth / 2.f;
+			float firstWinCenterY =
+				(float)firstWindow.mInfo.mY + (float)firstWindow.mInfo.mHeight / 2.f;
+			float winCenterX =
+				(float)event.mInfo.mX + (float)event.mInfo.mWidth / 2.f;
+			float winCenterY =
+				(float)event.mInfo.mY + (float)event.mInfo.mHeight / 2.f;
 
+			float relTransform[16];
+			bx::mtxTranslate(relTransform,
+				winCenterX - firstWinCenterX,
+				-(winCenterY - firstWinCenterY),
+				1.f
+			);
+			bx::mtxMul(wndData.mTransform, relTransform, firstWindow.mTransform);
+		}
+
+		group.mMembers.push_back(event.mWindow);
 		mWindows.insert(std::make_pair(event.mWindow, wndData));
 	}
 
 	void onWindowRemoved(const WindowEvent& event)
 	{
+		WindowData wndData = mWindows[event.mWindow];
 		mWindows.erase(event.mWindow);
+
+		WindowGroup& group = findWindowGroup(wndData.mInfo.mPID);
+		group.mMembers.remove(event.mWindow);
+		if(group.mMembers.empty())
+		{
+			mWindowGroups.erase(wndData.mInfo.mPID);
+		}
 	}
 
 	void onWindowUpdated(const WindowEvent& event)
 	{
 		WindowData& wndData = mWindows.find(event.mWindow)->second;
-
 		wndData.mInfo = event.mInfo;
-		float yScale = event.mInfo.mInvertedY ? -1.0f : 1.0f;
-		wndData.mTransform[0] = event.mInfo.mWidth;
-		wndData.mTransform[5] = event.mInfo.mHeight * yScale;
+	}
+
+	WindowGroup& findWindowGroup(uintptr_t pid)
+	{
+		auto itr = mWindowGroups.find(pid);
+		if(itr == mWindowGroups.end())
+		{
+			auto itr = mWindowGroups.insert(
+				std::make_pair(pid, WindowGroup())
+			);
+			return itr.first->second;
+		}
+		else
+		{
+			return itr->second;
+		}
 	}
 
 	static int32_t renderThread(void* userData)
@@ -455,7 +526,9 @@ private:
 	bgfx::IndexBufferHandle mQuadIndices;
 	bgfx::ProgramHandle mProgram;
 	bgfx::UniformHandle mTextureUniform;
+	bgfx::UniformHandle mQuadInfoUniform;
 	std::unordered_map<WindowId, WindowData> mWindows;
+	std::unordered_map<uintptr_t, WindowGroup> mWindowGroups;
 };
 
 }
