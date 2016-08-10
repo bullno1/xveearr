@@ -11,6 +11,7 @@
 #include <bx/sem.h>
 #include <bx/fpumath.h>
 #include <bx/commandline.h>
+#include "config.h"
 #include "shaders/quad.vsh.h"
 #include "shaders/quad.fsh.h"
 #include "IWindowManager.hpp"
@@ -238,7 +239,7 @@ private:
 
 	int showVersion()
 	{
-		printf("xveearr version\n");
+		printf("xveearr version " XVEEARR_VERSION "\n");
 		printf("\n");
 
 		printf("Supported window systems:\n");
