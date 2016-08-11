@@ -1,13 +1,12 @@
-CPP_FLAGS ?= -g -Wall -Wextra -Werror -std=c++11 -pedantic -Wno-switch -pthread -O2
-
 -import cpp.nu
 -import bgfx.nu
 
 all: bin/xveearr ! live
 
-bin/xveearr: shaders config << CPP_FLAGS BUILD_DIR
-	SYS_LIBS="x11-xcb xcb xcb-composite xcb-util xcb-res xcb-ewmh xcb-keysyms sdl2 gl"
+bin/xveearr: shaders config << BUILD_DIR
+	SYS_LIBS="x11-xcb xcb xcb-composite xcb-util xcb-res xcb-ewmh xcb-keysyms xcb-xfixes sdl2 gl"
 	FLAGS=" \
+		-g -Wall -Wextra -Werror -std=c++11 -pedantic -Wno-switch -pthread -O2 \
 		-isystem deps/bgfx/include \
 		-isystem deps/bx/include \
 		$(pkg-config --cflags ${SYS_LIBS}) \

@@ -38,6 +38,7 @@ bin/libbgfx.a:
 		-Ideps/bgfx/3rdparty \
 		-Ideps/bgfx/3rdparty/khronos \
 		-Ideps/bx/include \
+		-pthread \
 		-O2
 	"
 	${NUMAKE} static-lib:$@ \

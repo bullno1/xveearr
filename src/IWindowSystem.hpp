@@ -25,6 +25,15 @@ struct WindowInfo
 	unsigned int mHeight;
 };
 
+struct CursorInfo
+{
+	bgfx::TextureHandle mTexture;
+	unsigned int mOriginX;
+	unsigned int mOriginY;
+	unsigned int mWidth;
+	unsigned int mHeight;
+};
+
 struct WindowEvent
 {
 	enum Type
@@ -51,6 +60,7 @@ class IWindowSystem: public IComponent<WindowSystemCfg>, public IRenderHook
 public:
 	virtual bool pollEvent(WindowEvent& event) = 0;
 	virtual const WindowInfo* getWindowInfo(WindowId id) = 0;
+	virtual CursorInfo getCursorInfo() = 0;
 };
 
 }

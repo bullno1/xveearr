@@ -12,10 +12,12 @@
 #include <bgfx/bgfxplatform.h>
 #include <bgfx/bgfx.h>
 #include <X11/Xlib-xcb.h>
+#include <xcb/xcbext.h>
 #include <xcb/composite.h>
 #include <xcb/xcb_util.h>
 #include <xcb/res.h>
 #include <xcb/xcb_ewmh.h>
+#include <xcb/xfixes.h>
 #include "Registry.hpp"
 #include <GL/gl.h>
 #include <GL/glx.h>
@@ -87,16 +89,44 @@ public:
 		mXcbConn = XGetXCBConnection(mDisplay);
 		XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
 
+		xcb_prefetch_extension_data(mXcbConn, &xcb_composite_id);
+		xcb_prefetch_extension_data(mXcbConn, &xcb_res_id);
+		xcb_prefetch_extension_data(mXcbConn, &xcb_xfixes_id);
+
+		const xcb_query_extension_reply_t* xcomposite =
+			xcb_get_extension_data(mXcbConn, &xcb_composite_id);
+		if(!xcomposite->present) { return false; }
+
+		const xcb_query_extension_reply_t* xres =
+			xcb_get_extension_data(mXcbConn, &xcb_res_id);
+		if(!xres->present) { return false; }
+
+		const xcb_query_extension_reply_t* xfixes =
+			xcb_get_extension_data(mXcbConn, &xcb_xfixes_id);
+		if(!xfixes->present) { return false; }
+		mXFixesFirstEvent = xfixes->first_event;
+
 		SDL_SysWMinfo wmi;
 		SDL_GetVersion(&wmi.version);
 		SDL_GetWindowWMInfo(cfg.mWindow, &wmi);
 		mRendererDisplay = wmi.info.x11.display;
 		mPID = getClientPidFromWindow(wmi.info.x11.window);
 
-		xcb_generic_error_t *error;
-		xcb_void_cookie_t voidCookie;
+		xcb_xfixes_query_version_reply_t* version =
+			xcb_xfixes_query_version_reply(
+				mXcbConn,
+				xcb_xfixes_query_version(
+					mXcbConn,
+					XCB_XFIXES_MAJOR_VERSION,
+					XCB_XFIXES_MINOR_VERSION
+				),
+				NULL
+			);
+		if(!version) { return false; }
+		free(version);
 
-		voidCookie = xcb_grab_server_checked(mXcbConn);
+		xcb_generic_error_t *error;
+		xcb_void_cookie_t voidCookie = xcb_grab_server_checked(mXcbConn);
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
 		{
 			free(error);
@@ -105,7 +135,7 @@ public:
 
 		int numScreens = xcb_setup_roots_length(xcb_get_setup(mXcbConn));
 		std::vector<xcb_void_cookie_t> cookies;
-		cookies.reserve(numScreens);
+		cookies.reserve(numScreens * 2);
 
 		for(
 			xcb_screen_iterator_t itr =
@@ -124,6 +154,23 @@ public:
 					mXcbConn, rootWindow, XCB_CW_EVENT_MASK, eventMask
 				)
 			);
+
+			cookies.push_back(
+				xcb_xfixes_select_cursor_input_checked(
+					mXcbConn,
+					rootWindow,
+					XCB_XFIXES_CURSOR_NOTIFY_MASK_DISPLAY_CURSOR
+				)
+			);
+		}
+
+		for(xcb_void_cookie_t cookie: cookies)
+		{
+			if((error = xcb_request_check(mXcbConn, cookie)))
+			{
+				free(error);
+				return false;
+			}
 		}
 
 		xcb_ewmh_connection_t ewmh;
@@ -163,15 +210,6 @@ public:
 			return false;
 		}
 
-		for(xcb_void_cookie_t cookie: cookies)
-		{
-			if((error = xcb_request_check(mXcbConn, cookie)))
-			{
-				free(error);
-				return false;
-			}
-		}
-
 		return true;
 	}
 
@@ -195,40 +233,50 @@ public:
 		while((xcbEvent = xcb_poll_for_event(mXcbConn)))
 		{
 			WindowEvent tmpEvent;
-			switch(XCB_EVENT_RESPONSE_TYPE(xcbEvent))
+			uint8_t respType = XCB_EVENT_RESPONSE_TYPE(xcbEvent);
+			if(respType == mXFixesFirstEvent + XCB_XFIXES_CURSOR_NOTIFY)
 			{
-				case XCB_MAP_NOTIFY:
-					tmpEvent.mWindow =
-						((xcb_map_notify_event_t*)xcbEvent)->window;
-					tmpEvent.mType = WindowEvent::WindowAdded;
-					bufferEvent(tmpEvent);
-					break;
-				case XCB_UNMAP_NOTIFY:
-					tmpEvent.mWindow =
-						((xcb_unmap_notify_event_t*)xcbEvent)->window;
-					tmpEvent.mType = WindowEvent::WindowRemoved;
-					bufferEvent(tmpEvent);
-					break;
-				case XCB_REPARENT_NOTIFY:
-					// TODO: handle reparent to root
-					tmpEvent.mWindow =
-						((xcb_reparent_notify_event_t*)xcbEvent)->window;
-					tmpEvent.mType = WindowEvent::WindowRemoved;
-					bufferEvent(tmpEvent);
-					break;
-				case XCB_CONFIGURE_NOTIFY:
-					{
-						xcb_configure_notify_event_t* cfgNotifyEvent =
-							(xcb_configure_notify_event_t*)xcbEvent;
-						tmpEvent.mWindow = cfgNotifyEvent->window;
-						tmpEvent.mType = WindowEvent::WindowUpdated;
-						tmpEvent.mInfo.mX = cfgNotifyEvent->x;
-						tmpEvent.mInfo.mY = cfgNotifyEvent->y;
-						tmpEvent.mInfo.mWidth = cfgNotifyEvent->width;
-						tmpEvent.mInfo.mHeight = cfgNotifyEvent->height;
+				updateCursorInfo(
+					(xcb_xfixes_cursor_notify_event_t*)xcbEvent
+				);
+			}
+			else
+			{
+				switch(respType)
+				{
+					case XCB_MAP_NOTIFY:
+						tmpEvent.mWindow =
+							((xcb_map_notify_event_t*)xcbEvent)->window;
+						tmpEvent.mType = WindowEvent::WindowAdded;
 						bufferEvent(tmpEvent);
-					}
-					break;
+						break;
+					case XCB_UNMAP_NOTIFY:
+						tmpEvent.mWindow =
+							((xcb_unmap_notify_event_t*)xcbEvent)->window;
+						tmpEvent.mType = WindowEvent::WindowRemoved;
+						bufferEvent(tmpEvent);
+						break;
+					case XCB_REPARENT_NOTIFY:
+						// TODO: handle reparent to root
+						tmpEvent.mWindow =
+							((xcb_reparent_notify_event_t*)xcbEvent)->window;
+						tmpEvent.mType = WindowEvent::WindowRemoved;
+						bufferEvent(tmpEvent);
+						break;
+					case XCB_CONFIGURE_NOTIFY:
+						{
+							xcb_configure_notify_event_t* cfgNotifyEvent =
+								(xcb_configure_notify_event_t*)xcbEvent;
+							tmpEvent.mWindow = cfgNotifyEvent->window;
+							tmpEvent.mType = WindowEvent::WindowUpdated;
+							tmpEvent.mInfo.mX = cfgNotifyEvent->x;
+							tmpEvent.mInfo.mY = cfgNotifyEvent->y;
+							tmpEvent.mInfo.mWidth = cfgNotifyEvent->width;
+							tmpEvent.mInfo.mHeight = cfgNotifyEvent->height;
+							bufferEvent(tmpEvent);
+						}
+						break;
+				}
 			}
 
 			free(xcbEvent);
@@ -314,6 +362,26 @@ public:
 	{
 		auto itr = mWindows.find(id);
 		return itr != mWindows.end() ? &itr->second : NULL;
+	}
+
+	CursorInfo getCursorInfo()
+	{
+		if(mCursors.empty())
+		{
+			retrieveCurrentCursor();
+		}
+
+		auto itr = mCursors.find(mCurrentCursor);
+		if(itr == mCursors.end())
+		{
+			CursorInfo invalid;
+			invalid.mTexture = BGFX_INVALID_HANDLE;
+			return invalid;
+		}
+		else
+		{
+			return itr->second;
+		}
 	}
 
 private:
@@ -682,6 +750,63 @@ private:
 		return false;
 	}
 
+	void updateCursorInfo(xcb_xfixes_cursor_notify_event_t* ev)
+	{
+		if(mCursors.find(ev->cursor_serial) == mCursors.end())
+		{
+			retrieveCurrentCursor();
+		}
+		else
+		{
+			mCurrentCursor = ev->cursor_serial;
+		}
+	}
+
+	void retrieveCurrentCursor()
+	{
+		xcb_xfixes_get_cursor_image_reply_t* cursorImage =
+			xcb_xfixes_get_cursor_image_reply(
+				mXcbConn, xcb_xfixes_get_cursor_image(mXcbConn), NULL
+			);
+		if(!cursorImage) { return; }
+
+		CursorInfo cursorInfo;
+		cursorInfo.mOriginX = cursorImage->xhot;
+		cursorInfo.mOriginY = cursorImage->yhot;
+		cursorInfo.mWidth = cursorImage->width;
+		cursorInfo.mHeight = cursorImage->height;
+
+		uint32_t imgSize = (uint32_t)cursorImage->width * (uint32_t)cursorImage->height;
+		const uint32_t* imageData =
+			xcb_xfixes_get_cursor_image_cursor_image(cursorImage);
+		const bgfx::Memory* imgBuff = bgfx::alloc(imgSize * sizeof(uint32_t));
+		for(uint32_t i = 0; i < imgSize; ++i)
+		{
+			uint32_t pixel = imageData[i];
+			uint8_t a = (pixel >> 24) & 0xff;
+			uint8_t r = (pixel >> 16) & 0xff;
+			uint8_t g = (pixel >>  8) & 0xff;
+			uint8_t b = (pixel >>  0) & 0xff;
+			imgBuff->data[i * 4 + 0] = r;
+			imgBuff->data[i * 4 + 1] = g;
+			imgBuff->data[i * 4 + 2] = b;
+			imgBuff->data[i * 4 + 3] = a;
+		}
+		cursorInfo.mTexture = bgfx::createTexture2D(
+			cursorImage->width, cursorImage->height, 0,
+			bgfx::TextureFormat::RGBA8,
+			BGFX_TEXTURE_U_CLAMP|BGFX_TEXTURE_V_CLAMP,
+			imgBuff
+		);
+
+		mCurrentCursor = cursorImage->cursor_serial;
+		mCursors.insert(
+			std::make_pair(cursorImage->cursor_serial, cursorInfo)
+		);
+
+		free(cursorImage);
+	}
+
 	Display* mDisplay;
 	Display* mRendererDisplay;
 	xcb_connection_t* mXcbConn;
@@ -695,6 +820,9 @@ private:
 	unsigned int mEventIndex;
 	std::vector<WindowEvent> mEvents;
 	std::vector<WindowEvent> mTmpEventBuff;
+	std::unordered_map<uint32_t, CursorInfo> mCursors;
+	uint32_t mCurrentCursor;
+	uint8_t mXFixesFirstEvent;
 	PFNGLXBINDTEXIMAGEEXTPROC mglXBindTexImageEXT;
 	PFNGLXRELEASETEXIMAGEEXTPROC mglXReleaseTexImageEXT;
 };

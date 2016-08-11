@@ -501,9 +501,11 @@ private:
 			{
 				const WindowGroup& group = pair.second;
 				float zOrder = 0.f;
+				bool focused = false;
 
 				for(WindowId window: group.mMembers)
 				{
+					focused = window == mFocusedWindow;
 					const WindowInfo& wndInfo = mWindows[window];
 
 					float relTransform[16];
@@ -527,7 +529,29 @@ private:
 					++zOrder;
 				}
 
+				if(!focused) { continue; }
 
+				CursorInfo cursorInfo = mWindowSystem->getCursorInfo();
+				int mouseX, mouseY;
+				SDL_GetGlobalMouseState(&mouseX, &mouseY);
+				float cursorRelTransform[16];
+				bx::mtxTranslate(cursorRelTransform,
+					(float)mouseX - (float)cursorInfo.mOriginX - (float)mHalfScreenWidth,
+					-((float)mouseY - (float)cursorInfo.mOriginY - (float)mHalfScreenHeight),
+					zOrder);
+				float cursorTransform[16];
+				bx::mtxMul(cursorTransform, cursorRelTransform, group.mTransform);
+
+				bgfx::setState(BGFX_STATE_DEFAULT | BGFX_STATE_BLEND_ALPHA);
+				loadTexturedQuad(
+					cursorTransform,
+					cursorInfo.mTexture,
+					cursorInfo.mWidth,
+					cursorInfo.mHeight,
+					true
+				);
+				bgfx::submit(RenderPass::LeftEye, mProgram, 0, true);
+				bgfx::submit(RenderPass::RightEye, mProgram, 0, false);
 			}
 
 			loadTexturedQuad(
@@ -566,7 +590,7 @@ private:
 		float quadInfo[] = {
 			(float)width,
 			(float)height,
-			invertedY ? -1.f : 1.f,
+			invertedY ? 1.f : 0.f,
 			0.f
 		};
 		bgfx::setUniform(mQuadInfoUniform, quadInfo, 1);
