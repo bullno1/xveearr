@@ -18,10 +18,11 @@
 #include <xcb/res.h>
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xfixes.h>
-#include "Registry.hpp"
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <GL/glext.h>
+#include "Registry.hpp"
+#include "Log.hpp"
 
 namespace xveearr
 {
@@ -78,13 +79,13 @@ public:
 		mglXReleaseTexImageEXT = (PFNGLXRELEASETEXIMAGEEXTPROC)glXGetProcAddress(
 			(const GLubyte*)"glXReleaseTexImageEXT"
 		);
-		if(!mglXBindTexImageEXT || !mglXReleaseTexImageEXT)
-		{
-			return false;
-		}
+		XVR_ENSURE(
+			mglXBindTexImageEXT && mglXReleaseTexImageEXT,
+			"GLX_EXT_texture_from_pixmap is not available"
+		);
 
 		mDisplay = XOpenDisplay(NULL);
-		if(mDisplay == NULL) { return false; }
+		XVR_ENSURE(mDisplay, "Could not open display");
 
 		mXcbConn = XGetXCBConnection(mDisplay);
 		XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
@@ -95,15 +96,15 @@ public:
 
 		const xcb_query_extension_reply_t* xcomposite =
 			xcb_get_extension_data(mXcbConn, &xcb_composite_id);
-		if(!xcomposite->present) { return false; }
+		XVR_ENSURE(xcomposite->present, xcb_composite_id.name, " is not available");
 
 		const xcb_query_extension_reply_t* xres =
 			xcb_get_extension_data(mXcbConn, &xcb_res_id);
-		if(!xres->present) { return false; }
+		XVR_ENSURE(xres->present, xcb_res_id.name, " is not available");
 
 		const xcb_query_extension_reply_t* xfixes =
 			xcb_get_extension_data(mXcbConn, &xcb_xfixes_id);
-		if(!xfixes->present) { return false; }
+		XVR_ENSURE(xfixes->present, xcb_xfixes_id.name, " is not available");
 		mXFixesFirstEvent = xfixes->first_event;
 
 		SDL_SysWMinfo wmi;
@@ -122,7 +123,10 @@ public:
 				),
 				NULL
 			);
-		if(!version) { return false; }
+		XVR_ENSURE(version, "Could not query version of ", xcb_xfixes_id.name);
+		XVR_LOG(DEBUG,
+			xcb_xfixes_id.name, " version: ",
+			version->major_version, ".", version->minor_version);
 		free(version);
 
 		xcb_generic_error_t *error;
@@ -130,6 +134,7 @@ public:
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
 		{
 			free(error);
+			XVR_LOG(ERROR, "Could not grab server");
 			return false;
 		}
 
@@ -169,6 +174,7 @@ public:
 			if((error = xcb_request_check(mXcbConn, cookie)))
 			{
 				free(error);
+				XVR_LOG(ERROR, "Some request failed");
 				return false;
 			}
 		}
@@ -180,6 +186,7 @@ public:
 		if(!initStatus)
 		{
 			xcb_ewmh_connection_wipe(&ewmh);
+			XVR_LOG(ERROR, "Could not initialize EWMH atoms");
 			return false;
 		}
 
@@ -196,17 +203,19 @@ public:
 		if(!supportCheckStatus)
 		{
 			xcb_ewmh_connection_wipe(&ewmh);
+			XVR_LOG(ERROR, "EWMH is not supported");
 			return false;
 		}
 		xcb_ewmh_connection_wipe(&ewmh);
 
 		mWindowMgrPid = getPidFromWindow(supportWindow);
-		if(!mWindowMgrPid) { return false; }
+		XVR_ENSURE(mWindowMgrPid, "Could not retrieve PID of window manager");
 
 		voidCookie = xcb_ungrab_server_checked(mXcbConn);
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
 		{
 			free(error);
+			XVR_LOG(ERROR, "Could not ungrab server");
 			return false;
 		}
 
@@ -499,18 +508,16 @@ private:
 	bool translateWindowAdded(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		if(itr != mWindows.end()) { return false; }
+		XVR_ENSURE(itr == mWindows.end(), "Trying to add a window twice");
 
 		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
 			mXcbConn, xcb_get_geometry(mXcbConn, event.mWindow), NULL
 		);
-
-		if(geomReply == NULL) { return false; }
+		XVR_ENSURE(geomReply, "Could not retrieve window's geometry");
 
 		xcb_get_geometry_reply_t geom = *geomReply;
 		free(geomReply);
-
-		if(geom.depth == 0) { return false; }
+		XVR_ENSURE(geom.depth != 0, "Window has zero depth");
 
 		uint32_t clientPid = getClientPidFromWindow(event.mWindow);
 		if(clientPid == 0 || clientPid == mPID) { return false; }
@@ -541,7 +548,7 @@ private:
 	bool translateWindowRemoved(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		if(itr == mWindows.end()) { return false; }
+		XVR_ENSURE(itr != mWindows.end(), "Trying to remove non-existent window");
 
 		TextureReq* req = new TextureReq;
 		req->mType = TextureReq::Unbind;
@@ -557,7 +564,7 @@ private:
 	bool translateWindowUpdated(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		if(itr == mWindows.end()) { return false; }
+		XVR_ENSURE(itr != mWindows.end(), "Trying to update non-existent window");
 
 		WindowInfo& wndInfo = itr->second;
 
@@ -598,6 +605,8 @@ private:
 
 	void bindTexture(const TextureReq& req)
 	{
+		XVR_LOG(DEBUG, "Binding window ", req.mWindow, " to texture ", req.mBgfxHandle.idx);
+
 		xcb_pixmap_t compositePixmap;
 		GLXFBConfig fbConfig;
 		if(!getCompositePixmap(req.mWindow, compositePixmap, fbConfig))
@@ -627,10 +636,14 @@ private:
 		mTextures.insert(std::make_pair(req.mBgfxHandle.idx, texInfo));
 
 		bgfx::overrideInternal(req.mBgfxHandle, glTexture);
+
+		XVR_LOG(DEBUG, "Window ", req.mWindow, " bound  to texture", req.mBgfxHandle.idx);
 	}
 
 	void unbindTexture(const TextureReq& req)
 	{
+		XVR_LOG(DEBUG, "Unbinding texture ", req.mBgfxHandle.idx);
+
 		auto itr = mTextures.find(req.mBgfxHandle.idx);
 		if(itr == mTextures.end()) { return; }
 
@@ -643,12 +656,16 @@ private:
 		xcb_free_pixmap(mRendererXcbConn, texInfo.mCompositePixmap);
 		glDeleteTextures(1, &texInfo.mGLHandle);
 		mTextures.erase(itr);
+
+		XVR_LOG(DEBUG, "Texture ", req.mBgfxHandle.idx, " unbound");
 	}
 
 	void rebindTexture(const TextureReq& req)
 	{
 		auto itr = mTextures.find(req.mBgfxHandle.idx);
 		if(itr == mTextures.end()) { return; }
+
+		XVR_LOG(DEBUG, "Rebinding texture ", req.mBgfxHandle.idx);
 
 		TextureInfo& texInfo = itr->second;
 
@@ -675,6 +692,8 @@ private:
 
 		texInfo.mCompositePixmap = compositePixmap;
 		texInfo.mGLXPixmap = glxPixmap;
+
+		XVR_LOG(DEBUG, "Texture ", req.mBgfxHandle.idx, " rebound");
 	}
 
 	bool getCompositePixmap(
@@ -708,6 +727,7 @@ private:
 
 			free(namePixmapError);
 			free(geomReply);
+			XVR_LOG(ERROR, "Could not retrieve window's data");
 			return false;
 		}
 
@@ -748,23 +768,28 @@ private:
 		}
 
 		XFree(fbConfigs);
+		XVR_LOG(ERROR, "Could not find a suitable FBConfig");
 		return false;
 	}
 
 	void updateCursorInfo(xcb_xfixes_cursor_notify_event_t* ev)
 	{
+		XVR_LOG(DEBUG, "Cursor serial: ", ev->cursor_serial);
 		if(mCursors.find(ev->cursor_serial) == mCursors.end())
 		{
 			retrieveCurrentCursor();
 		}
 		else
 		{
+			XVR_LOG(DEBUG, "Using cached cursor");
 			mCurrentCursor = ev->cursor_serial;
 		}
 	}
 
 	void retrieveCurrentCursor()
 	{
+		XVR_LOG(DEBUG, "Retrieving current cursor");
+
 		xcb_xfixes_get_cursor_image_reply_t* cursorImage =
 			xcb_xfixes_get_cursor_image_reply(
 				mXcbConn, xcb_xfixes_get_cursor_image(mXcbConn), NULL

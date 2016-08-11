@@ -6,6 +6,7 @@
 #include "Registry.hpp"
 #include "IWindowManager.hpp"
 #include "IHMD.hpp"
+#include "Log.hpp"
 
 #if BX_PLATFORM_LINUX == 1
 #	include <X11/Xlib-xcb.h>
@@ -48,10 +49,10 @@ public:
 		SDL_GetWindowWMInfo(cfg.mWindow, &wmi);
 
 #if BX_PLATFORM_LINUX == 1
-		if(wmi.subsystem != SDL_SYSWM_X11) { return false; }
+		XVR_ENSURE(wmi.subsystem == SDL_SYSWM_X11, "Unsupported subsystem");
 
 		mXcbConn = xcb_connect(NULL, NULL);
-		if(!mXcbConn) { return false; }
+		XVR_ENSURE(mXcbConn, "Could not connect to X server");
 
 		mKeySyms = xcb_key_symbols_alloc(mXcbConn);
 
@@ -88,6 +89,7 @@ public:
 
 		return true;
 #else
+		XVR_LOG(ERROR, "Unsupported platform");
 		return false;
 #endif
 	}
@@ -158,6 +160,8 @@ public:
 private:
 	void beginGrab()
 	{
+		XVR_LOG(DEBUG, "Begin grabbing window");
+
 		WindowId focusedWindow = mWindowManager->getFocusedWindow();
 		if(!focusedWindow) { return; }
 
@@ -178,6 +182,7 @@ private:
 	void endGrab()
 	{
 		mGrabbedGroup = 0;
+		XVR_LOG(DEBUG, "End grabbing window");
 	}
 
 	IWindowManager* mWindowManager;
