@@ -501,6 +501,7 @@ private:
 			{
 				const WindowGroup& group = pair.second;
 				float zOrder = 0.f;
+
 				for(WindowId window: group.mMembers)
 				{
 					const WindowInfo& wndInfo = mWindows[window];
@@ -513,12 +514,7 @@ private:
 					float transform[16];
 					bx::mtxMul(transform, relTransform, group.mTransform);
 
-					bgfx::setState(0
-						| BGFX_STATE_RGB_WRITE
-						| BGFX_STATE_ALPHA_WRITE
-						| BGFX_STATE_DEPTH_TEST_LESS
-						| BGFX_STATE_DEPTH_WRITE
-						| BGFX_STATE_MSAA);
+					bgfx::setState(BGFX_STATE_DEFAULT & ~BGFX_STATE_CULL_MASK);
 					loadTexturedQuad(
 						transform,
 						wndInfo.mTexture,
@@ -530,6 +526,8 @@ private:
 
 					++zOrder;
 				}
+
+
 			}
 
 			loadTexturedQuad(

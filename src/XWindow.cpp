@@ -1,9 +1,12 @@
+#include <bx/platform.h>
+
+#if BX_PLATFORM_LINUX == 1
+
 #include "IWindowSystem.hpp"
 #include <unordered_map>
 #include <vector>
 #include <SDL_syswm.h>
 #include <SDL.h>
-#include <bx/platform.h>
 #include <bx/spscqueue.h>
 #include <bx/macros.h>
 #include <bgfx/bgfxplatform.h>
@@ -696,10 +699,8 @@ private:
 	PFNGLXRELEASETEXIMAGEEXTPROC mglXReleaseTexImageEXT;
 };
 
-#if BX_PLATFORM_LINUX == 1
-
 XVR_REGISTER(IWindowSystem, XWindow)
 
-#endif
-
 }
+
+#endif
