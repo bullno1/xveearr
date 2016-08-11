@@ -50,10 +50,10 @@ bgfx::VertexDecl Vertex::mDecl;
 
 static Vertex gQuad[] =
 {
-	{-0.5f,  0.5f},
-	{-0.5f, -0.5f},
-	{ 0.5f, -0.5f},
-	{ 0.5f,  0.5f}
+	{ 0.f,  0.f },
+	{ 0.f, -1.f },
+	{ 1.f, -1.f },
+	{ 1.f,  0.f }
 };
 
 static const uint16_t gIndicies[] =
@@ -364,7 +364,9 @@ private:
 		);
 
 		const RenderData& rightEye = mHMD->getRenderData(Eye::Right);
-		bgfx::setViewRect(RenderPass::RightEye, 0, 0, viewportWidth, viewportHeight);
+		bgfx::setViewRect(
+			RenderPass::RightEye, 0, 0, viewportWidth, viewportHeight
+		);
 		bgfx::setViewFrameBuffer(RenderPass::RightEye, rightEye.mFrameBuffer);
 		bgfx::setViewClear(
 			RenderPass::RightEye, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH, gClearColor
@@ -442,12 +444,10 @@ private:
 		mHMD->getViewportSize(viewportWidth, viewportHeight);
 
 		float leftImageTransform[16];
-		bx::mtxTranslate(leftImageTransform,
-			viewportWidth / 2, viewportHeight / 2, 0.f);
+		bx::mtxTranslate(leftImageTransform, 0, viewportHeight, 0.f);
 
 		float rightImageTransform[16];
-		bx::mtxTranslate(rightImageTransform,
-			viewportWidth / 2 * 3, viewportHeight / 2, 0.f);
+		bx::mtxTranslate(rightImageTransform, viewportWidth, viewportHeight, 0.f);
 
 		while(true)
 		{
@@ -505,12 +505,10 @@ private:
 				{
 					const WindowInfo& wndInfo = mWindows[window];
 
-					float centerX = wndInfo.mX + wndInfo.mWidth / 2;
-					float centerY = wndInfo.mY + wndInfo.mHeight / 2;
 					float relTransform[16];
 					bx::mtxTranslate(relTransform,
-						centerX - mHalfScreenWidth,
-						-(centerY - mHalfScreenHeight),
+						(float)wndInfo.mX - (float)mHalfScreenWidth,
+						-((float)wndInfo.mY - (float)mHalfScreenHeight),
 						zOrder);
 					float transform[16];
 					bx::mtxMul(transform, relTransform, group.mTransform);
