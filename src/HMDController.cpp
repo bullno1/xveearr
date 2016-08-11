@@ -37,7 +37,7 @@ public:
 			headTransform[13],
 			headTransform[14]
 		};
-		float rayRelDirection[] = { 0.f, 0.f, -1.f };
+		float rayRelDirection[] = { 0.f, 0.f, -1.f, 0.f };
 		float rayDirection[4];
 		bx::vec4MulMtx(rayDirection, rayRelDirection, headTransform);
 		WindowId window = utils::pickWindow(
