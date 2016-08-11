@@ -11,6 +11,7 @@ install:
   - ./configure
   - make -j$(nproc)
   - sudo make install
+  - cd ..
 script:
   - ./numake
   - bin/xveearr --version
