@@ -519,7 +519,7 @@ private:
 
 				for(WindowId window: group.mMembers)
 				{
-					focused = window == mFocusedWindow;
+					focused |= window == mFocusedWindow;
 					const WindowInfo& wndInfo = mWindows[window];
 
 					float relTransform[16];
