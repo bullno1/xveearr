@@ -78,7 +78,7 @@ public:
 		mglXReleaseTexImageEXT = (PFNGLXRELEASETEXIMAGEEXTPROC)glXGetProcAddress(
 			(const GLubyte*)"glXReleaseTexImageEXT"
 		);
-		if(!mglXBindTexImageEXT || ! mglXReleaseTexImageEXT)
+		if(!mglXBindTexImageEXT || !mglXReleaseTexImageEXT)
 		{
 			return false;
 		}
@@ -415,6 +415,7 @@ private:
 		xcb_query_tree_reply_t* queryTreeReply = xcb_query_tree_reply(
 			mXcbConn, xcb_query_tree(mXcbConn, window), NULL
 		);
+		if(!queryTreeReply) { return 0; }
 
 		int numChildren = xcb_query_tree_children_length(queryTreeReply);
 		xcb_window_t* children = xcb_query_tree_children(queryTreeReply);
