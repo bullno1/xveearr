@@ -12,7 +12,7 @@ inline Log::Log(const char* level, const char* file, unsigned int line)
 	std::stringstream ss;
 	ss << mFile << ":" << mLine;
 	std::cout << std::left
-		<< "[" << std::setw(6) << mLevel << std::setw(0) << "] @ "
+		<< "[" << std::setw(5) << mLevel << std::setw(0) << "] @ "
 		<< std::setw(25) << ss.str() << std::setw(0) << std::internal
 		<< ": ";
 }
