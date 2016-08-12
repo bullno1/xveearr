@@ -43,7 +43,7 @@ bin/libbgfx.a:
 	"
 	${NUMAKE} static-lib:$@ \
 		sources="deps/bgfx/src/amalgamated.cpp" \
-		cpp_flags="${FLAGS}"
+		cpp_flags="${FLAGS}" \
 		stable=1
 
 SHADERC = $(readlink -f shaderc)
