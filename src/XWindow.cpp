@@ -128,7 +128,7 @@ public:
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
 		{
 			free(error);
-			XVR_LOG(ERROR, "Could not grab server");
+			XVR_LOG(Error, "Could not grab server");
 			return false;
 		}
 
@@ -168,7 +168,7 @@ public:
 			if((error = xcb_request_check(mXcbConn, cookie)))
 			{
 				free(error);
-				XVR_LOG(ERROR, "Some request failed");
+				XVR_LOG(Error, "Some request failed");
 				return false;
 			}
 		}
@@ -180,7 +180,7 @@ public:
 		if(!initStatus)
 		{
 			xcb_ewmh_connection_wipe(&ewmh);
-			XVR_LOG(ERROR, "Could not initialize EWMH atoms");
+			XVR_LOG(Error, "Could not initialize EWMH atoms");
 			return false;
 		}
 
@@ -197,7 +197,7 @@ public:
 		if(!supportCheckStatus)
 		{
 			xcb_ewmh_connection_wipe(&ewmh);
-			XVR_LOG(ERROR, "EWMH is not supported");
+			XVR_LOG(Error, "EWMH is not supported");
 			return false;
 		}
 		xcb_ewmh_connection_wipe(&ewmh);
@@ -209,7 +209,7 @@ public:
 		if((error = xcb_request_check(mXcbConn, voidCookie)))
 		{
 			free(error);
-			XVR_LOG(ERROR, "Could not ungrab server");
+			XVR_LOG(Error, "Could not ungrab server");
 			return false;
 		}
 
@@ -505,7 +505,7 @@ private:
 	bool translateWindowAdded(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		XVR_ENSURE(itr == mWindows.end(), "Trying to add a window twice");
+		if(itr != mWindows.end()) { return false; }
 
 		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
 			mXcbConn, xcb_get_geometry(mXcbConn, event.mWindow), NULL
@@ -545,7 +545,7 @@ private:
 	bool translateWindowRemoved(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		XVR_ENSURE(itr != mWindows.end(), "Trying to remove non-existent window");
+		if(itr == mWindows.end()) { return false; }
 
 		TextureReq* req = new TextureReq;
 		req->mType = TextureReq::Unbind;
@@ -561,7 +561,7 @@ private:
 	bool translateWindowUpdated(WindowEvent& event)
 	{
 		auto itr = mWindows.find(event.mWindow);
-		XVR_ENSURE(itr != mWindows.end(), "Trying to update non-existent window");
+		if(itr == mWindows.end()) { return false; }
 
 		WindowInfo& wndInfo = itr->second;
 
@@ -602,7 +602,9 @@ private:
 
 	void bindTexture(const TextureReq& req)
 	{
-		XVR_LOG(DEBUG, "Binding window ", req.mWindow, " to texture ", req.mBgfxHandle.idx);
+		XVR_LOG(Debug,
+			"Binding window ", std::hex, req.mWindow, std::dec,
+			" to texture ", req.mBgfxHandle.idx);
 
 		xcb_pixmap_t compositePixmap;
 		GLXFBConfig fbConfig;
@@ -634,12 +636,14 @@ private:
 
 		bgfx::overrideInternal(req.mBgfxHandle, glTexture);
 
-		XVR_LOG(DEBUG, "Window ", req.mWindow, " bound  to texture", req.mBgfxHandle.idx);
+		XVR_LOG(Debug,
+			"Window ", std::hex, req.mWindow, std::dec,
+			" bound  to texture ", req.mBgfxHandle.idx);
 	}
 
 	void unbindTexture(const TextureReq& req)
 	{
-		XVR_LOG(DEBUG, "Unbinding texture ", req.mBgfxHandle.idx);
+		XVR_LOG(Debug, "Unbinding texture ", req.mBgfxHandle.idx);
 
 		auto itr = mTextures.find(req.mBgfxHandle.idx);
 		if(itr == mTextures.end()) { return; }
@@ -654,7 +658,7 @@ private:
 		glDeleteTextures(1, &texInfo.mGLHandle);
 		mTextures.erase(itr);
 
-		XVR_LOG(DEBUG, "Texture ", req.mBgfxHandle.idx, " unbound");
+		XVR_LOG(Debug, "Texture ", req.mBgfxHandle.idx, " unbound");
 	}
 
 	void rebindTexture(const TextureReq& req)
@@ -662,7 +666,7 @@ private:
 		auto itr = mTextures.find(req.mBgfxHandle.idx);
 		if(itr == mTextures.end()) { return; }
 
-		XVR_LOG(DEBUG, "Rebinding texture ", req.mBgfxHandle.idx);
+		XVR_LOG(Debug, "Rebinding texture ", req.mBgfxHandle.idx);
 
 		TextureInfo& texInfo = itr->second;
 
@@ -690,7 +694,7 @@ private:
 		texInfo.mCompositePixmap = compositePixmap;
 		texInfo.mGLXPixmap = glxPixmap;
 
-		XVR_LOG(DEBUG, "Texture ", req.mBgfxHandle.idx, " rebound");
+		XVR_LOG(Debug, "Texture ", req.mBgfxHandle.idx, " rebound");
 	}
 
 	bool getCompositePixmap(
@@ -710,7 +714,11 @@ private:
 		);
 		if(namePixmapError)
 		{
-			XVR_LOG(ERROR, "Could not assign composite pixmap to window");
+			XVR_LOG(Error,
+				"Could not assign composite pixmap to window ",
+				std::hex, window, std::dec, ": ",
+				xcb_event_get_error_label(namePixmapError->error_code)
+			);
 			free(namePixmapError);
 			return false;
 		}
@@ -724,7 +732,7 @@ private:
 		if(geomReply == NULL || geomReply->depth == 0)
 		{
 			free(geomReply);
-			XVR_LOG(ERROR, "Could not retrieve window's data");
+			XVR_LOG(Error, "Could not retrieve window's data");
 			return false;
 		}
 		xcb_get_geometry_reply_t geom = *geomReply;
@@ -764,27 +772,27 @@ private:
 		}
 
 		XFree(fbConfigs);
-		XVR_LOG(ERROR, "Could not find a suitable FBConfig");
+		XVR_LOG(Error, "Could not find a suitable FBConfig");
 		return false;
 	}
 
 	void updateCursorInfo(xcb_xfixes_cursor_notify_event_t* ev)
 	{
-		XVR_LOG(DEBUG, "Cursor serial: ", ev->cursor_serial);
+		XVR_LOG(Debug, "Cursor serial: ", ev->cursor_serial);
 		if(mCursors.find(ev->cursor_serial) == mCursors.end())
 		{
 			retrieveCurrentCursor();
 		}
 		else
 		{
-			XVR_LOG(DEBUG, "Using cached cursor");
+			XVR_LOG(Debug, "Using cached cursor");
 			mCurrentCursor = ev->cursor_serial;
 		}
 	}
 
 	void retrieveCurrentCursor()
 	{
-		XVR_LOG(DEBUG, "Retrieving current cursor");
+		XVR_LOG(Debug, "Retrieving current cursor");
 
 		xcb_xfixes_get_cursor_image_reply_t* cursorImage =
 			xcb_xfixes_get_cursor_image_reply(

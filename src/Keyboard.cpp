@@ -89,7 +89,7 @@ public:
 
 		return true;
 #else
-		XVR_LOG(ERROR, "Unsupported platform");
+		XVR_LOG(Error, "Unsupported platform");
 		return false;
 #endif
 	}
@@ -160,7 +160,7 @@ public:
 private:
 	void beginGrab()
 	{
-		XVR_LOG(DEBUG, "Begin grabbing window");
+		XVR_LOG(Debug, "Begin grabbing window");
 
 		WindowId focusedWindow = mWindowManager->getFocusedWindow();
 		if(!focusedWindow) { return; }
@@ -182,7 +182,7 @@ private:
 	void endGrab()
 	{
 		mGrabbedGroup = 0;
-		XVR_LOG(DEBUG, "End grabbing window");
+		XVR_LOG(Debug, "End grabbing window");
 	}
 
 	IWindowManager* mWindowManager;

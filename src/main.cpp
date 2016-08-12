@@ -112,16 +112,16 @@ public:
 			return showVersion();
 		}
 
-		XVR_LOG(INFO, "Initializing...");
+		XVR_LOG(Info, "Initializing...");
 		if(!init(argc, argv))
 		{
 			shutdown();
 			return EXIT_FAILURE;
 		}
 
-		XVR_LOG(INFO, "Initialization completed, entering main loop");
+		XVR_LOG(Info, "Initialization completed, entering main loop");
 		int exitCode = mainLoop();
-		XVR_LOG(INFO, "Main loop terminated");
+		XVR_LOG(Info, "Main loop terminated");
 		shutdown();
 
 		return exitCode;
@@ -210,7 +210,7 @@ public:
 		}
 		else
 		{
-			XVR_LOG(WARN, "Trying to set focus to a non-existent window");
+			XVR_LOG(Warn, "Trying to set focus to a non-existent window");
 			return false;
 		}
 	}
@@ -233,11 +233,12 @@ private:
 	{
 		printf("Usage: xveearr --help\n");
 		printf("       xveearr --version\n");
-		printf("       xveearr [ --hmd <HMD> ]\n");
+		printf("       xveearr [ --log <Level> ] [ --hmd <HMD> ]\n");
 		printf("\n");
 		printf("    --help                  Print this message\n");
 		printf("    -v, --version           Show version info\n");
 		printf("    -h, --hmd <HMD>         Choose HMD driver\n");
+		printf("    -l, --log <Level>       Set log level\n");
 
 		return EXIT_SUCCESS;
 	}
@@ -276,14 +277,20 @@ private:
 	bool init(int argc, const char* argv[])
 	{
 		bx::CommandLine cmdLine(argc, argv);
+
+		const char* logLevelStr = cmdLine.findOption('l', "log", "info");
+		Log::Level logLevel = Log::parseLogLevel(logLevelStr);
+		XVR_ENSURE(logLevel < Log::Count, "Invalid log level: ", logLevelStr);
+		Log::setLogLevel(logLevel);
+
 		const char* hmdName = cmdLine.findOption('h', "hmd", "null");
 
-		XVR_LOG(INFO, "Looking for HMD driver");
+		XVR_LOG(Info, "Looking for HMD driver");
 		for(IHMD& hmd: Registry<IHMD>::all())
 		{
 			if(strcmp(hmd.getName(), hmdName) == 0)
 			{
-				XVR_LOG(INFO, "Use ", hmdName);
+				XVR_LOG(Info, "Use ", hmdName);
 				mHMD = &hmd;
 				break;
 			}
@@ -315,15 +322,15 @@ private:
 
 		XVR_ENSURE(mWindow, "Could not create window");
 
-		XVR_LOG(INFO, "Looking for WindowSystem");
+		XVR_LOG(Info, "Looking for WindowSystem");
 		WindowSystemCfg wndSysCfg;
 		wndSysCfg.mWindow = mWindow;
 		for(IWindowSystem& winsys: Registry<IWindowSystem>::all())
 		{
-			XVR_LOG(INFO, "Trying ", winsys.getName());
+			XVR_LOG(Info, "Trying ", winsys.getName());
 			if(winsys.init(wndSysCfg))
 			{
-				XVR_LOG(INFO, "Use ", winsys.getName());
+				XVR_LOG(Info, "Use ", winsys.getName());
 				mWindowSystem = &winsys;
 				break;
 			}
@@ -335,17 +342,17 @@ private:
 
 		XVR_ENSURE(mWindowSystem, "Could not find a suitable WindowSystem");
 
-		XVR_LOG(INFO, "Initializing Controller(s)");
+		XVR_LOG(Info, "Initializing Controller(s)");
 		ControllerCfg controllerCfg;
 		controllerCfg.mWindow = mWindow;
 		controllerCfg.mWindowManager = this;
 		controllerCfg.mHMD = mHMD;
 		for(IController& controller: Registry<IController>::all())
 		{
-			XVR_LOG(INFO, "Trying ", controller.getName());
+			XVR_LOG(Info, "Trying ", controller.getName());
 			if(controller.init(controllerCfg))
 			{
-				XVR_LOG(INFO, "Use ", controller.getName());
+				XVR_LOG(Info, "Use ", controller.getName());
 				mControllers.push_back(&controller);
 			}
 			else
@@ -426,16 +433,19 @@ private:
 
 	void shutdown()
 	{
-		XVR_LOG(INFO, "Shutting down...");
+		XVR_LOG(Info, "Shutting down...");
 		if(bgfx::isValid(mQuadInfoUniform)) { bgfx::destroyUniform(mQuadInfoUniform); }
 		if(bgfx::isValid(mTextureUniform)) { bgfx::destroyUniform(mTextureUniform); }
 		if(bgfx::isValid(mProgram)) { bgfx::destroyProgram(mProgram); }
 		if(bgfx::isValid(mQuadIndices)) { bgfx::destroyIndexBuffer(mQuadIndices); }
 		if(bgfx::isValid(mQuad)) { bgfx::destroyVertexBuffer(mQuad); }
 
-		mHMD->releaseResources();
+		if(mBgfxInitialized)
+		{
+			mHMD->releaseResources();
+			bgfx::shutdown();
+		}
 
-		if(mBgfxInitialized) { bgfx::shutdown(); }
 		if(mRenderThread.isRunning()) { mRenderThread.shutdown(); }
 
 		for(IController* controller: mControllers)
@@ -449,7 +459,7 @@ private:
 		SDL_Quit();
 
 		if(mHMD) { mHMD->shutdown(); }
-		XVR_LOG(INFO, "Shutting down completed");
+		XVR_LOG(Info, "Shutting down completed");
 	}
 
 	int mainLoop()
@@ -664,17 +674,17 @@ private:
 
 	static int32_t renderThread(void* userData)
 	{
-		XVR_LOG(INFO, "Render thread started");
+		XVR_LOG(Info, "Render thread started");
 		Application* app = static_cast<Application*>(userData);
 
 		// Ensure that this thread is registered as the render thread before
 		// bgfx is initialized
-		XVR_LOG(INFO, "Initializing render thread...");
+		XVR_LOG(Info, "Initializing render thread...");
 		bgfx::renderFrame();
 		app->mHMD->initRenderer();
 		app->mWindowSystem->initRenderer();
 		app->mRenderThreadReadySem.post();
-		XVR_LOG(INFO, "Initialization completed, entering render loop");
+		XVR_LOG(Info, "Initialization completed, entering render loop");
 
 		while(true)
 		{
@@ -690,10 +700,10 @@ private:
 			}
 		}
 
-		XVR_LOG(INFO, "Render loop terminated, shutting down...");
+		XVR_LOG(Info, "Render loop terminated, shutting down...");
 		app->mWindowSystem->shutdownRenderer();
 		app->mWindowSystem->shutdownRenderer();
-		XVR_LOG(INFO, "Render thread terminated");
+		XVR_LOG(Info, "Render thread terminated");
 		return 0;
 	}
 
