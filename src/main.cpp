@@ -187,8 +187,8 @@ public:
 		XVR_ENSURE(itr != mWindowGroups.end(), "Invalid PID");
 
 		float pos[] = {
-			(float)x - (float)mHalfScreenWidth,
-			-((float)y - (float)mHalfScreenHeight),
+			(float)x * mXPixelsToMeters - mHalfScreenWidth,
+			-((float)y * mYPixelsToMeters - mHalfScreenHeight),
 			0.f,
 			1.f
 		};
@@ -304,12 +304,6 @@ private:
 			"Could not initialize SDL"
 		);
 
-		SDL_DisplayMode displayMode;
-		memset(&displayMode, 0, sizeof(displayMode));
-		SDL_GetCurrentDisplayMode(0, &displayMode);
-		mHalfScreenWidth = displayMode.w / 2;
-		mHalfScreenHeight = displayMode.h / 2;
-
 		unsigned int viewportWidth, viewportHeight;
 		mHMD->getViewportSize(viewportWidth, viewportHeight);
 
@@ -374,8 +368,19 @@ private:
 		bgfx::reset(viewportWidth * 2, viewportHeight, BGFX_RESET_VSYNC);
 		bgfx::setDebug(BGFX_DEBUG_TEXT);
 
+		DisplayMetrics displayMetrics = mWindowSystem->getDisplayMetrics();
+		XVR_LOG(Debug, "Width in pixels = ", displayMetrics.mWidthInPixels);
+		XVR_LOG(Debug, "Height in pixels = ", displayMetrics.mHeightInPixels);
+		XVR_LOG(Debug, "Width in meters = ", displayMetrics.mWidthInMeters);
+		XVR_LOG(Debug, "Height in meters = ", displayMetrics.mHeightInMeters);
+
+		mHalfScreenWidth = displayMetrics.mWidthInMeters * 0.5f;
+		mHalfScreenHeight = displayMetrics.mHeightInMeters * 0.5f;
+		mXPixelsToMeters = displayMetrics.mWidthInMeters / (float)displayMetrics.mWidthInPixels;
+		mYPixelsToMeters = displayMetrics.mHeightInMeters / (float)displayMetrics.mHeightInPixels;
+
 		float hmdAspectRatio = (float)viewportWidth / (float)viewportHeight;
-		float destkopAspectRatio = (float)displayMode.w / (float)displayMode.h;
+		float destkopAspectRatio = (float)displayMetrics.mWidthInMeters / (float)displayMetrics.mHeightInMeters;
 		bool fitWidth = destkopAspectRatio > hmdAspectRatio;
 		float halfFitDim = fitWidth ? mHalfScreenWidth : mHalfScreenHeight;
 
@@ -383,8 +388,9 @@ private:
 		float wat = eye.mViewProjection[5];
 		float watwat = fitWidth ? wat / hmdAspectRatio : wat;
 		// how much of the view will the virtual desktop take
-		float viewRatio = 0.9f;
+		float viewRatio = 0.8f;
 		mPlacementDistance = halfFitDim / viewRatio * watwat;
+		XVR_LOG(Debug, "Placment distance = ", mPlacementDistance);
 
 		const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
 		bgfx::setViewRect(
@@ -547,8 +553,8 @@ private:
 
 					float relTransform[16];
 					bx::mtxTranslate(relTransform,
-						(float)wndInfo.mX - (float)mHalfScreenWidth,
-						-((float)wndInfo.mY - (float)mHalfScreenHeight),
+						(float)wndInfo.mX * mXPixelsToMeters - mHalfScreenWidth,
+						-((float)wndInfo.mY * mYPixelsToMeters - mHalfScreenHeight),
 						zOrder);
 					float transform[16];
 					bx::mtxMul(transform, relTransform, group.mTransform);
@@ -557,13 +563,14 @@ private:
 					loadTexturedQuad(
 						transform,
 						wndInfo.mTexture,
-						wndInfo.mWidth, wndInfo.mHeight,
+						wndInfo.mWidth * mXPixelsToMeters,
+						wndInfo.mHeight * mYPixelsToMeters,
 						wndInfo.mInvertedY
 					);
 					bgfx::submit(RenderPass::LeftEye, mProgram, 0, true);
 					bgfx::submit(RenderPass::RightEye, mProgram, 0, false);
 
-					++zOrder;
+					zOrder += 0.0001f;
 				}
 
 				if(!focused) { continue; }
@@ -572,9 +579,11 @@ private:
 				int mouseX, mouseY;
 				SDL_GetGlobalMouseState(&mouseX, &mouseY);
 				float cursorRelTransform[16];
+				float cursorXInMeters = (mouseX - cursorInfo.mOriginX) * mXPixelsToMeters;
+				float cursorYInMeters = (mouseY - cursorInfo.mOriginY) * mYPixelsToMeters;
 				bx::mtxTranslate(cursorRelTransform,
-					(float)mouseX - (float)cursorInfo.mOriginX - (float)mHalfScreenWidth,
-					-((float)mouseY - (float)cursorInfo.mOriginY - (float)mHalfScreenHeight),
+					cursorXInMeters - mHalfScreenWidth,
+					-(cursorYInMeters - mHalfScreenHeight),
 					zOrder);
 				float cursorTransform[16];
 				bx::mtxMul(cursorTransform, cursorRelTransform, group.mTransform);
@@ -583,8 +592,8 @@ private:
 				loadTexturedQuad(
 					cursorTransform,
 					cursorInfo.mTexture,
-					cursorInfo.mWidth,
-					cursorInfo.mHeight,
+					cursorInfo.mWidth * mXPixelsToMeters,
+					cursorInfo.mHeight * mYPixelsToMeters,
 					true
 				);
 				bgfx::submit(RenderPass::LeftEye, mProgram, 0, true);
@@ -616,7 +625,7 @@ private:
 	void loadTexturedQuad(
 		const float* transform,
 		T texture,
-		unsigned int width, unsigned int height,
+		float width, float height,
 		bool invertedY
 	)
 	{
@@ -624,12 +633,7 @@ private:
 		bgfx::setVertexBuffer(mQuad);
 		bgfx::setIndexBuffer(mQuadIndices);
 		bgfx::setTexture(0, mTextureUniform, texture);
-		float quadInfo[] = {
-			(float)width,
-			(float)height,
-			invertedY ? 1.f : 0.f,
-			0.f
-		};
+		float quadInfo[] = { width, height, invertedY ? 1.f : 0.f, 0.f };
 		bgfx::setUniform(mQuadInfoUniform, quadInfo, 1);
 	}
 
@@ -724,8 +728,10 @@ private:
 	SDL_Window* mWindow;
 	bool mBgfxInitialized;
 	IWindowSystem* mWindowSystem;
-	unsigned int mHalfScreenWidth;
-	unsigned int mHalfScreenHeight;
+	float mHalfScreenWidth;
+	float mHalfScreenHeight;
+	float mXPixelsToMeters;
+	float mYPixelsToMeters;
 	float mPlacementDistance;
 	bx::Thread mRenderThread;
 	bx::Semaphore mRenderThreadReadySem;

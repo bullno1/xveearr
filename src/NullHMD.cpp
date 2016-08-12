@@ -11,9 +11,9 @@ namespace
 
 const unsigned int gViewportWidth = 1280 / 2;
 const unsigned int gViewportHeight = 720;
-const float gLeftEye[] = { -50.0f, 0.0f, 0.f };
-const float gRightEye[] = { 50.0f, 0.0f, 0.f };
-float gLookAt[] = { 0.f, 0.0f, -10.f };
+const float gLeftEye[] = { -0.03f, 0.f, 0.f };
+const float gRightEye[] = { 0.03f, 0.f, 0.f };
+float gLookAt[] = { 0.f, 0.f, -0.5f };
 
 }
 
@@ -94,10 +94,10 @@ public:
 		float translation[3] = {};
 		float rotation[3] = {};
 
-		if(keyStates[SDL_SCANCODE_A]) { translation[0] = -4.f; }
-		if(keyStates[SDL_SCANCODE_D]) { translation[0] =  4.f; }
-		if(keyStates[SDL_SCANCODE_W]) { translation[2] = -4.f; }
-		if(keyStates[SDL_SCANCODE_S]) { translation[2] =  4.f; }
+		if(keyStates[SDL_SCANCODE_A]) { translation[0] = -0.004f; }
+		if(keyStates[SDL_SCANCODE_D]) { translation[0] =  0.004f; }
+		if(keyStates[SDL_SCANCODE_W]) { translation[2] = -0.004f; }
+		if(keyStates[SDL_SCANCODE_S]) { translation[2] =  0.004f; }
 		if(keyStates[SDL_SCANCODE_Q]) { rotation[1] = -0.01f; }
 		if(keyStates[SDL_SCANCODE_E]) { rotation[1] =  0.01f; }
 		if(keyStates[SDL_SCANCODE_R]) { rotation[0] = -0.01f; }
@@ -123,9 +123,9 @@ public:
 			mRenderData[Eye::Left].mViewTransform, leftEye, leftLookAt
 		);
 		bx::mtxProjRh(mRenderData[Eye::Left].mViewProjection,
-			50.0f,
+			60.0f,
 			(float)gViewportWidth / (float)gViewportHeight,
-			1.5f, 100000.f
+			0.15f, 10.f
 		);
 
 		float rightEye[3];
@@ -138,9 +138,9 @@ public:
 			mRenderData[Eye::Right].mViewTransform, rightEye, rightLookAt
 		);
 		bx::mtxProjRh(mRenderData[Eye::Right].mViewProjection,
-			50.0f,
+			60.0f,
 			(float)gViewportWidth / (float)gViewportHeight,
-			1.5f, 100000.f
+			0.15f, 10.f
 		);
 	}
 

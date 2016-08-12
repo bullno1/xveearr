@@ -60,14 +60,26 @@ const int GLX_PIXMAP_ATTRS[] = {
 	None
 };
 
+xcb_screen_t* getScreenOfDisplay(xcb_connection_t *c, int screen)
+{
+	for(
+		xcb_screen_iterator_t iter = xcb_setup_roots_iterator(xcb_get_setup(c));
+		iter.rem; --screen, xcb_screen_next(&iter)
+	)
+	{
+		if(screen == 0) { return iter.data; }
+	}
+
+	return NULL;
+}
+
 }
 
 class XWindow: public IWindowSystem
 {
 public:
 	XWindow()
-		:mDisplay(NULL)
-		,mXcbConn(NULL)
+		:mXcbConn(NULL)
 		,mEventIndex(0)
 	{}
 
@@ -84,11 +96,16 @@ public:
 			"GLX_EXT_texture_from_pixmap is not available"
 		);
 
-		mDisplay = XOpenDisplay(NULL);
-		XVR_ENSURE(mDisplay, "Could not open display");
+		int screenNumber;
+		mXcbConn = xcb_connect(NULL, &screenNumber);
+		XVR_ENSURE(mXcbConn, "Could not connect to X server");
 
-		mXcbConn = XGetXCBConnection(mDisplay);
-		XSetEventQueueOwner(mDisplay, XCBOwnsEventQueue);
+		xcb_screen_t* screen = getScreenOfDisplay(mXcbConn, screenNumber);
+		XVR_ENSURE(screen, "Sum Ting Wong");
+		mDisplayMetrics.mWidthInPixels = screen->width_in_pixels;
+		mDisplayMetrics.mHeightInPixels = screen->height_in_pixels;
+		mDisplayMetrics.mWidthInMeters = (float)screen->width_in_millimeters / 1000.f;
+		mDisplayMetrics.mHeightInMeters = (float)screen->height_in_millimeters / 1000.f;
 
 		xcb_prefetch_extension_data(mXcbConn, &xcb_composite_id);
 		xcb_prefetch_extension_data(mXcbConn, &xcb_res_id);
@@ -218,13 +235,15 @@ public:
 
 	void shutdown()
 	{
-		if(mDisplay != NULL) { XCloseDisplay(mDisplay); }
+		if(mXcbConn != NULL) { xcb_disconnect(mXcbConn); }
 	}
 
 	const char* getName() const
 	{
 		return "xwindow";
 	}
+
+	DisplayMetrics getDisplayMetrics() { return mDisplayMetrics; }
 
 	bool pollEvent(WindowEvent& xvrEvent)
 	{
@@ -837,12 +856,12 @@ private:
 		free(cursorImage);
 	}
 
-	Display* mDisplay;
 	Display* mRendererDisplay;
 	xcb_connection_t* mXcbConn;
 	xcb_connection_t* mRendererXcbConn;
 	PID mPID;
 	uint32_t mWindowMgrPid;
+	DisplayMetrics mDisplayMetrics;
 	std::unordered_map<WindowId, WindowInfo> mWindows;
 	bx::SpScUnboundedQueue<TextureReq> mTextureReqs;
 	std::vector<TextureReq> mDeferredTextureReqs;

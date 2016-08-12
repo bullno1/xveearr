@@ -50,6 +50,14 @@ struct WindowEvent
 	WindowInfo mInfo;
 };
 
+struct DisplayMetrics
+{
+	unsigned int mWidthInPixels;
+	unsigned int mHeightInPixels;
+	float mWidthInMeters;
+	float mHeightInMeters;
+};
+
 struct WindowSystemCfg
 {
 	SDL_Window* mWindow;
@@ -58,6 +66,7 @@ struct WindowSystemCfg
 class IWindowSystem: public IComponent<WindowSystemCfg>, public IRenderHook
 {
 public:
+	virtual DisplayMetrics getDisplayMetrics() = 0;
 	virtual bool pollEvent(WindowEvent& event) = 0;
 	virtual const WindowInfo* getWindowInfo(WindowId id) = 0;
 	virtual CursorInfo getCursorInfo() = 0;
