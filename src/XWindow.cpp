@@ -107,27 +107,21 @@ public:
 		XVR_ENSURE(xfixes->present, xcb_xfixes_id.name, " is not available");
 		mXFixesFirstEvent = xfixes->first_event;
 
+		xcb_xfixes_query_version_unchecked(
+			mXcbConn,
+			XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION
+		);
+		xcb_res_query_version_unchecked(
+			mXcbConn,
+			XCB_RES_MAJOR_VERSION, XCB_RES_MINOR_VERSION
+		);
+
 		SDL_SysWMinfo wmi;
 		SDL_GetVersion(&wmi.version);
 		SDL_GetWindowWMInfo(cfg.mWindow, &wmi);
 		mRendererDisplay = wmi.info.x11.display;
+		mRendererXcbConn = XGetXCBConnection(mRendererDisplay);
 		mPID = getClientPidFromWindow(wmi.info.x11.window);
-
-		xcb_xfixes_query_version_reply_t* version =
-			xcb_xfixes_query_version_reply(
-				mXcbConn,
-				xcb_xfixes_query_version(
-					mXcbConn,
-					XCB_XFIXES_MAJOR_VERSION,
-					XCB_XFIXES_MINOR_VERSION
-				),
-				NULL
-			);
-		XVR_ENSURE(version, "Could not query version of ", xcb_xfixes_id.name);
-		XVR_LOG(DEBUG,
-			xcb_xfixes_id.name, " version: ",
-			version->major_version, ".", version->minor_version);
-		free(version);
 
 		xcb_generic_error_t *error;
 		xcb_void_cookie_t voidCookie = xcb_grab_server_checked(mXcbConn);
@@ -319,7 +313,10 @@ public:
 
 	void initRenderer()
 	{
-		mRendererXcbConn = XGetXCBConnection(mRendererDisplay);
+		xcb_composite_query_version_unchecked(
+			mRendererXcbConn,
+			XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION
+		);
 
 		xcb_grab_server(mRendererXcbConn);
 		for(
