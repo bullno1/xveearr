@@ -459,7 +459,7 @@ private:
 		SDL_Quit();
 
 		if(mHMD) { mHMD->shutdown(); }
-		XVR_LOG(Info, "Shutting down completed");
+		XVR_LOG(Info, "Shutdown completed");
 	}
 
 	int mainLoop()

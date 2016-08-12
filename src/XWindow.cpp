@@ -603,7 +603,7 @@ private:
 	void bindTexture(const TextureReq& req)
 	{
 		XVR_LOG(Debug,
-			"Binding window ", std::hex, req.mWindow, std::dec,
+			"Binding window 0x", std::hex, req.mWindow, std::dec,
 			" to texture ", req.mBgfxHandle.idx);
 
 		xcb_pixmap_t compositePixmap;
@@ -637,7 +637,7 @@ private:
 		bgfx::overrideInternal(req.mBgfxHandle, glTexture);
 
 		XVR_LOG(Debug,
-			"Window ", std::hex, req.mWindow, std::dec,
+			"Window 0x", std::hex, req.mWindow, std::dec,
 			" bound  to texture ", req.mBgfxHandle.idx);
 	}
 
@@ -715,7 +715,7 @@ private:
 		if(namePixmapError)
 		{
 			XVR_LOG(Error,
-				"Could not assign composite pixmap to window ",
+				"Could not assign composite pixmap to window 0x",
 				std::hex, window, std::dec, ": ",
 				xcb_event_get_error_label(namePixmapError->error_code)
 			);
@@ -778,7 +778,7 @@ private:
 
 	void updateCursorInfo(xcb_xfixes_cursor_notify_event_t* ev)
 	{
-		XVR_LOG(Debug, "Cursor serial: ", ev->cursor_serial);
+		XVR_LOG(Debug, "Cursor serial: 0x", std::hex, ev->cursor_serial, std::dec);
 		if(mCursors.find(ev->cursor_serial) == mCursors.end())
 		{
 			retrieveCurrentCursor();
