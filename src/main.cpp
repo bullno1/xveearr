@@ -369,9 +369,22 @@ private:
 		mBgfxInitialized = true;
 
 		mHMD->prepareResources();
+		mHMD->update();
 
 		bgfx::reset(viewportWidth * 2, viewportHeight, BGFX_RESET_VSYNC);
 		bgfx::setDebug(BGFX_DEBUG_TEXT);
+
+		float hmdAspectRatio = (float)viewportWidth / (float)viewportHeight;
+		float destkopAspectRatio = (float)displayMode.w / (float)displayMode.h;
+		bool fitWidth = destkopAspectRatio > hmdAspectRatio;
+		float halfFitDim = fitWidth ? mHalfScreenWidth : mHalfScreenHeight;
+
+		const RenderData& eye = mHMD->getRenderData(Eye::Left);
+		float wat = eye.mViewProjection[5];
+		float watwat = fitWidth ? wat / hmdAspectRatio : wat;
+		// how much of the view will the virtual desktop take
+		float viewRatio = 0.9f;
+		mPlacementDistance = halfFitDim / viewRatio * watwat;
 
 		const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
 		bgfx::setViewRect(
@@ -656,7 +669,7 @@ private:
 		{
 			WindowGroup group;
 			float relTransform[16];
-			bx::mtxTranslate(relTransform, 0.f, 0.f, -600.f);
+			bx::mtxTranslate(relTransform, 0.f, 0.f, -mPlacementDistance);
 			float headTransform[16];
 			mHMD->getHeadTransform(headTransform);
 			bx::mtxMul(group.mTransform, relTransform, headTransform);
@@ -713,6 +726,7 @@ private:
 	IWindowSystem* mWindowSystem;
 	unsigned int mHalfScreenWidth;
 	unsigned int mHalfScreenHeight;
+	float mPlacementDistance;
 	bx::Thread mRenderThread;
 	bx::Semaphore mRenderThreadReadySem;
 	bgfx::VertexBufferHandle mQuad;
