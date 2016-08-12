@@ -699,35 +699,34 @@ private:
 		GLXFBConfig& fbConfig
 	)
 	{
+		// xcb_request_check will hang here for some reason so it cannot be
+		// pipelined with the later get_geometry request
 		xcb_pixmap_t pixmap = xcb_generate_id(mRendererXcbConn);
-		xcb_void_cookie_t namePixmapCookie =
+		xcb_generic_error_t* namePixmapError = xcb_request_check(
+			mRendererXcbConn,
 			xcb_composite_name_window_pixmap_checked(
 				mRendererXcbConn, window, pixmap
-			);
-		xcb_get_geometry_cookie_t getGeomCookie = xcb_get_geometry(
-			mRendererXcbConn, window
+			)
 		);
-
-		xcb_generic_error_t* namePixmapError = xcb_request_check(
-			mRendererXcbConn, namePixmapCookie
-		);
-		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
-			mRendererXcbConn, getGeomCookie, NULL
-		);
-
-		if(namePixmapError != NULL || geomReply == NULL || geomReply->depth == 0)
+		if(namePixmapError)
 		{
-			if(!namePixmapError)
-			{
-				xcb_free_pixmap(mRendererXcbConn, pixmap);
-			}
-
+			XVR_LOG(ERROR, "Could not assign composite pixmap to window");
 			free(namePixmapError);
+			return false;
+		}
+		free(namePixmapError);
+
+		xcb_get_geometry_reply_t* geomReply = xcb_get_geometry_reply(
+			mRendererXcbConn,
+			xcb_get_geometry(mRendererXcbConn, window),
+			NULL
+		);
+		if(geomReply == NULL || geomReply->depth == 0)
+		{
 			free(geomReply);
 			XVR_LOG(ERROR, "Could not retrieve window's data");
 			return false;
 		}
-
 		xcb_get_geometry_reply_t geom = *geomReply;
 		free(geomReply);
 
