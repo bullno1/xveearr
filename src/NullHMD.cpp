@@ -28,10 +28,7 @@ public:
 
 	bool init()
 	{
-		bx::mtxSRT(mHeadTransform,
-			1.f, 1.f, 1.f,
-			0.f, 0.f, 0.f,
-			0.f, 0.f, 600.f);
+		bx::mtxIdentity(mHeadTransform);
 
 		return true;
 	}
@@ -128,7 +125,7 @@ public:
 		bx::mtxProjRh(mRenderData[Eye::Left].mViewProjection,
 			50.0f,
 			(float)gViewportWidth / (float)gViewportHeight,
-			1.f, 100000.f
+			1.5f, 100000.f
 		);
 
 		float rightEye[3];
@@ -143,7 +140,7 @@ public:
 		bx::mtxProjRh(mRenderData[Eye::Right].mViewProjection,
 			50.0f,
 			(float)gViewportWidth / (float)gViewportHeight,
-			1.f, 100000.f
+			1.5f, 100000.f
 		);
 	}
 
