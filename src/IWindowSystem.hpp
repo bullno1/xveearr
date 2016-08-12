@@ -19,8 +19,8 @@ struct WindowInfo
 	bgfx::TextureHandle mTexture;
 	bool mInvertedY;
 	PID mPID;
-	unsigned int mX;
-	unsigned int mY;
+	int mX;
+	int mY;
 	unsigned int mWidth;
 	unsigned int mHeight;
 };
