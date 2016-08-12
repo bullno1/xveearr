@@ -9,8 +9,8 @@ bin/xveearr: shaders config << BUILD_DIR
 		-g -Wall -Wextra -Werror -std=c++11 -pedantic -Wno-switch -pthread -O2 \
 		-isystem deps/bgfx/include \
 		-isystem deps/bx/include \
-		$(sdl2-config --cflags) \
-		$(pkg-config --cflags ${SYS_LIBS}) \
+		$(sdl2-config --cflags | sed 's/-I/-isystem/g') \
+		$(pkg-config --cflags ${SYS_LIBS} | sed 's/-I/-isystem/g') \
 	"
 	${NUMAKE} exe:$@ \
 		sources="$(find src \( -name '*.cpp' -or -name '*.c' \))" \
