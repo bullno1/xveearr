@@ -2,11 +2,14 @@
 #include <list>
 #include <vector>
 #include <algorithm>
+#include <iterator>
+#define SDL_MAIN_HANDLED
 #include <SDL_syswm.h>
 #include <SDL.h>
 #include <bgfx/bgfxplatform.h>
 #include <bgfx/bgfx.h>
 #include <bx/bx.h>
+#include <bx/platform.h>
 #include <bx/thread.h>
 #include <bx/sem.h>
 #include <bx/fpumath.h>
@@ -100,7 +103,7 @@ public:
 		mQuadInfoUniform = BGFX_INVALID_HANDLE;
 	}
 
-	int run(int argc, const char* argv[])
+	int run(int argc, char* argv[])
 	{
 		bx::CommandLine cmdLine(argc, argv);
 		if(cmdLine.hasArg("help"))
@@ -130,7 +133,7 @@ public:
 	unsigned int getWindowGroups(const PID** pids)
 	{
 		*pids = mPIDs.data();
-		return mPIDs.size();
+		return (unsigned int)mPIDs.size();
 	}
 
 	unsigned int getWindows(PID pid, const WindowId** wids)
@@ -158,7 +161,7 @@ public:
 		}
 
 		*wids = mTmpWindows.data();
-		return mTmpWindows.size();
+		return (unsigned int)mTmpWindows.size();
 	}
 
 	bool getGroupTransform(PID pid, float* result)
@@ -274,7 +277,7 @@ private:
 		return EXIT_SUCCESS;
 	}
 
-	bool init(int argc, const char* argv[])
+	bool init(int argc, char* argv[])
 	{
 		bx::CommandLine cmdLine(argc, argv);
 
@@ -299,6 +302,7 @@ private:
 		XVR_ENSURE(mHMD != NULL, "Could not find HMD driver");
 		XVR_ENSURE(mHMD->init(), "Could no initialize HMD");
 
+		SDL_SetMainReady();
 		XVR_ENSURE(
 			SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) == 0,
 			"Could not initialize SDL"
@@ -394,7 +398,8 @@ private:
 
 		const RenderData& leftEye = mHMD->getRenderData(Eye::Left);
 		bgfx::setViewRect(
-			RenderPass::LeftEye, 0, 0, viewportWidth, viewportHeight
+			RenderPass::LeftEye, 0, 0,
+			(uint16_t)viewportWidth, (uint16_t)viewportHeight
 		);
 		bgfx::setViewFrameBuffer(RenderPass::LeftEye, leftEye.mFrameBuffer);
 		bgfx::setViewClear(
@@ -403,7 +408,8 @@ private:
 
 		const RenderData& rightEye = mHMD->getRenderData(Eye::Right);
 		bgfx::setViewRect(
-			RenderPass::RightEye, 0, 0, viewportWidth, viewportHeight
+			RenderPass::RightEye, 0, 0,
+			(uint16_t)viewportWidth, (uint16_t)viewportHeight
 		);
 		bgfx::setViewFrameBuffer(RenderPass::RightEye, rightEye.mFrameBuffer);
 		bgfx::setViewClear(
@@ -411,7 +417,8 @@ private:
 		);
 
 		bgfx::setViewRect(
-			RenderPass::Mirror, 0, 0, viewportWidth * 2, viewportHeight
+			RenderPass::Mirror, 0, 0,
+			(uint16_t)(viewportWidth * 2), (uint16_t)viewportHeight
 		);
 		bgfx::setViewClear(
 			RenderPass::Mirror, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH, 0
@@ -421,7 +428,7 @@ private:
 		float proj[16];
 		bx::mtxIdentity(view);
 		bx::mtxOrthoRh(
-			proj, 0, viewportWidth * 2, 0, viewportHeight, -1.0f, 1.0f
+			proj, 0, (float)viewportWidth * 2, 0, (float)viewportHeight, -1.0f, 1.0f
 		);
 		bgfx::setViewTransform(RenderPass::Mirror, view, proj);
 
@@ -487,10 +494,12 @@ private:
 		mHMD->getViewportSize(viewportWidth, viewportHeight);
 
 		float leftImageTransform[16];
-		bx::mtxTranslate(leftImageTransform, 0, viewportHeight, 0.f);
+		bx::mtxTranslate(leftImageTransform, 0, (float)viewportHeight, 0.f);
 
 		float rightImageTransform[16];
-		bx::mtxTranslate(rightImageTransform, viewportWidth, viewportHeight, 0.f);
+		bx::mtxTranslate(
+			rightImageTransform, (float)viewportWidth, (float)viewportHeight, 0.f
+		);
 
 		while(true)
 		{
@@ -603,14 +612,14 @@ private:
 			loadTexturedQuad(
 				leftImageTransform,
 				leftEye.mFrameBuffer,
-				viewportWidth, viewportHeight, false
+				(float)viewportWidth, (float)viewportHeight, false
 			);
 			bgfx::submit(RenderPass::Mirror, mProgram);
 
 			loadTexturedQuad(
 				rightImageTransform,
 				rightEye.mFrameBuffer,
-				viewportWidth, viewportHeight, false
+				(float)viewportWidth, (float)viewportHeight, false
 			);
 			bgfx::submit(RenderPass::Mirror, mProgram);
 
@@ -678,10 +687,10 @@ private:
 			mHMD->getHeadTransform(headTransform);
 			bx::mtxMul(group.mTransform, relTransform, headTransform);
 
-			auto itr = mWindowGroups.insert(std::make_pair(pid, group));
+			auto itr2 = mWindowGroups.insert(std::make_pair(pid, group));
 			mPIDs.push_back(pid);
 
-			return itr.first->second;
+			return itr2.first->second;
 		}
 		else
 		{
@@ -750,8 +759,21 @@ private:
 
 }
 
-int main(int argc, const char* argv[])
+int main(int argc, char* argv[])
 {
 	xveearr::Application app;
 	return app.run(argc, argv);
 }
+
+#if BX_PLATFORM_WINDOWS != 0
+
+int WINAPI WinMain(
+	HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, INT nCmdShow
+)
+{
+	BX_UNUSED(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
+
+	return main(__argc, __argv);
+}
+
+#endif

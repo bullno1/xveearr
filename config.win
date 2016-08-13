@@ -1,0 +1,3 @@
+#!/bin/sh -e
+
+printf '#define XVEEARR_VERSION "%s"\n' "$(../version)"

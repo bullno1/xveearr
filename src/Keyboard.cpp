@@ -22,8 +22,10 @@ namespace xveearr
 namespace
 {
 
+#if BX_PLATFORM_LINUX == 1
 static const uint16_t gModMask = XCB_MOD_MASK_4 | XCB_MOD_MASK_SHIFT;
 static const xcb_keycode_t gKeyCode = XK_G;
+#endif
 
 }
 
